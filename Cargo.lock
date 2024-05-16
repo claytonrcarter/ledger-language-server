@@ -444,6 +444,7 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 name = "ledger-lsp"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "ledger-parser",
  "log",
  "regex",
@@ -452,6 +453,8 @@ dependencies = [
  "simple-logging",
  "tokio",
  "tower-lsp",
+ "tree-sitter",
+ "tree-sitter-ledger",
 ]
 
 [[package]]
@@ -1142,6 +1145,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 dependencies = [
  "once_cell",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.20.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e747b1f9b7b931ed39a548c1fae149101497de3c1fc8d9e18c62c1a66c683d3d"
+dependencies = [
+ "cc",
+ "regex",
+]
+
+[[package]]
+name = "tree-sitter-ledger"
+version = "0.0.1"
+source = "git+https://github.com/cbarrete/tree-sitter-ledger.git?rev=8a841fb20ce683bfbb3469e6ba67f2851cfdf94a#8a841fb20ce683bfbb3469e6ba67f2851cfdf94a"
+dependencies = [
+ "cc",
+ "tree-sitter",
 ]
 
 [[package]]

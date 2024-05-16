@@ -3,14 +3,33 @@ use log::LevelFilter;
 use regex::Regex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::fs;
+use std::{env, fs};
 use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
+use tree_sitter::Parser;
 
 #[tokio::main]
 async fn main() {
+    if let Some(arg) = env::args().nth(1) {
+        if arg == "--debug" {
+            let source = contents_of_path("/Users/crcarter/Documents/Bookkeeping/ledger/personal-archive/clayton-2023-09-05-2023-12-03.ledger");
+            let print_completions = false;
+
+            let be = LedgerBackend::Regex;
+            dump_debug("regex", be.completions(&source), print_completions);
+
+            let be = LedgerBackend::Parse;
+            dump_debug("parse", be.completions(&source), print_completions);
+
+            let be = LedgerBackend::TreeSitter;
+            dump_debug("tree-sitter", be.completions(&source), print_completions);
+        }
+
+        return;
+    }
+
     simple_logging::log_to_file("test.log", LevelFilter::max()).expect("Could not init logging");
     log::info!("[main] starting");
 
@@ -21,15 +40,10 @@ async fn main() {
             sources: HashMap::new(),
             completions: HashMap::new(),
         }),
-        backend: LedgerBackend::Regex,
+        backend: LedgerBackend::TreeSitter,
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
-
-// fn main() {
-//     dump_debug("parse", completions_for_path_parse("/Users/crcarter/Documents/Bookkeeping/ledger/personal-archive/clayton-2023-09-05-2023-12-03.ledger"));
-//     dump_debug("regex", completions_for_path_regex("/Users/crcarter/Documents/Bookkeeping/ledger/personal-archive/clayton-2023-09-05-2023-12-03.ledger"));
-// }
 
 #[derive(Debug, Eq, Hash, PartialEq)]
 enum LedgerCompletion {
@@ -63,6 +77,8 @@ enum LedgerBackend {
 
 impl LedgerBackend {
     fn completions(&self, content: &str) -> Vec<LedgerCompletion> {
+        let mut completions = HashSet::new();
+
         match self {
             LedgerBackend::Parse => {
                 let ledger = match ledger_parser::parse(content) {
@@ -73,8 +89,6 @@ impl LedgerBackend {
                         return Vec::new();
                     }
                 };
-
-                let mut completions = HashSet::new();
 
                 for item in ledger.items {
                     let transaction = match item {
@@ -91,12 +105,8 @@ impl LedgerBackend {
                         completions.insert(LedgerCompletion::Account(posting.account));
                     }
                 }
-
-                completions.into_iter().collect()
             }
             LedgerBackend::Regex => {
-                let mut completions = HashSet::new();
-
                 // date=date (code) payee ; comment
                 let payee_re = "(?m)^\\d[^ ]+( \\(.+\\))? (.+)(;|$)";
                 // TODO compile this once (lazy static?)
@@ -115,11 +125,40 @@ impl LedgerBackend {
                         completions.insert(LedgerCompletion::Account(account.to_string()));
                     }
                 }
-
-                completions.into_iter().collect()
             }
-            LedgerBackend::TreeSitter => todo!(),
+            LedgerBackend::TreeSitter => {
+                let mut parser = Parser::new();
+                parser
+                    .set_language(tree_sitter_ledger::language())
+                    .expect("loading Ledger tree-sitter grammar");
+                let tree = parser.parse(content, None).unwrap();
+
+                let query = tree_sitter::Query::new(
+                    tree_sitter_ledger::language(),
+                    "(payee) @payee (account) @account",
+                )
+                .expect("creating tree-sitter query");
+
+                let mut cursor = tree_sitter::QueryCursor::new();
+                let source = content.as_bytes();
+                for m in cursor.matches(&query, tree.root_node(), source) {
+                    for n in m.nodes_for_capture_index(0) {
+                        let payee = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
+                            .expect("converting bytes back to text")
+                            .to_string();
+                        completions.insert(LedgerCompletion::Payee(payee));
+                    }
+                    for n in m.nodes_for_capture_index(1) {
+                        let account = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
+                            .expect("converting bytes back to text")
+                            .to_string();
+                        completions.insert(LedgerCompletion::Account(account));
+                    }
+                }
+            }
         }
+
+        completions.into_iter().collect()
     }
 }
 
@@ -341,8 +380,7 @@ impl LanguageServer for Lsp {
     }
 }
 
-#[allow(dead_code)]
-fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>) {
+fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>, print_completions: bool) {
     println!("[{kind}] {} total", completions.len());
     let (payees, accounts): (Vec<_>, Vec<_>) = completions.iter().partition(|c| match c {
         LedgerCompletion::Payee(_) => true,
@@ -350,11 +388,13 @@ fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>) {
     });
     println!("[{kind}] {} payees", payees.len());
     println!("[{kind}] {} accounts", accounts.len());
-    dbg!(payees);
-    dbg!(accounts);
+
+    if print_completions {
+        dbg!(payees);
+        dbg!(accounts);
+    }
 }
 
-#[allow(dead_code)]
 fn contents_of_path(path: &str) -> String {
     match fs::read_to_string(path) {
         Ok(contents) => contents,
