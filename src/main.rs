@@ -407,7 +407,7 @@ fn contents_of_path(path: &str) -> String {
 }
 
 #[test]
-fn completions_by_regex() {
+fn test_completions_by_regex() {
     let be = LedgerBackend::Regex;
     let source = textwrap::dedent(
         "
@@ -446,7 +446,7 @@ fn completions_by_regex() {
 }
 
 #[test]
-fn completions_by_parse() {
+fn test_completions_by_parse() {
     let be = LedgerBackend::Parse;
     let source = textwrap::dedent(
         "
@@ -485,7 +485,7 @@ fn completions_by_parse() {
 }
 
 #[test]
-fn completions_by_treesitter() {
+fn test_completions_by_treesitter() {
     let be = LedgerBackend::TreeSitter;
     let source = textwrap::dedent(
         "
