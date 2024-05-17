@@ -30,8 +30,9 @@ async fn main() {
         return;
     }
 
-    simple_logging::log_to_file("test.log", LevelFilter::max()).expect("Could not init logging");
-    log::info!("[main] starting");
+    simple_logging::log_to_file("ledger-lsp.log", LevelFilter::max())
+        .expect("Could not init logging");
+    log::info!("[main] ledger-lsp starting");
 
     let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
     let (service, socket) = LspService::new(|client| Lsp {
