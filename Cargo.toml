@@ -7,7 +7,7 @@ edition = "2021"
 cc = "*"
 
 [dependencies]
-ledger-parser = "6.0.0"
+ledger-parser = { path = "../rust-ledger-parser", version = "6.0.0" }
 log = "0.4.21"
 regex = "1.10.4"
 serde = { version = "1", features = ["serde_derive"] }

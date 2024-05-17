@@ -1,4 +1,4 @@
-use ledger_parser::LedgerItem;
+use ledger_parser::{LedgerItem, Serializer, SerializerSettings};
 use log::LevelFilter;
 use regex::Regex;
 use serde_json::Value;
@@ -99,7 +99,9 @@ impl LedgerBackend {
                         | LedgerItem::Include(_)
                         | _ => continue,
                     };
-                    completions.insert(LedgerCompletion::Payee(transaction.description));
+                    if let Some(description) = transaction.description {
+                        completions.insert(LedgerCompletion::Payee(description));
+                    }
 
                     for posting in transaction.postings {
                         completions.insert(LedgerCompletion::Account(posting.account));
@@ -160,6 +162,23 @@ impl LedgerBackend {
 
         completions.into_iter().collect()
     }
+
+    fn format(content: &str) -> String {
+        match ledger_parser::parse(content) {
+            Ok(ledger) => {
+                let mut buf = Vec::new();
+                let mut settings = SerializerSettings::default();
+                settings.transaction_date_format = "%Y/%m/%d".to_owned();
+                ledger.write(&mut buf, &settings).expect("TODO");
+                String::from_utf8(buf).expect("TODO")
+            }
+            Err(err) => {
+                log::error!("[completions_for_path] Unable to parse ledger");
+                log::error!("[completions_for_path] {err}");
+                content.to_owned()
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -207,6 +226,7 @@ impl LanguageServer for Lsp {
                     }),
                     file_operations: None,
                 }),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
             ..Default::default()
@@ -378,6 +398,26 @@ impl LanguageServer for Lsp {
 
         Ok(Some(CompletionResponse::Array(completions)))
     }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        log::info!("[formatting] {params:?}");
+
+        let state = self.state.lock().await;
+        let source = match state.sources.get(&params.text_document.uri) {
+            Some(source) => source,
+            None => return Ok(None),
+        };
+
+        let formatted = LedgerBackend::format(&source);
+
+        Ok(Some(vec![TextEdit {
+            range: Range {
+                start: Position::new(0, 0),
+                end: Position::new(u32::MAX, u32::MAX),
+            },
+            new_text: formatted,
+        }]))
+    }
 }
 
 fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>, print_completions: bool) {
@@ -520,5 +560,26 @@ fn test_completions_by_treesitter() {
         ),
     ]
     "#
+    );
+}
+
+#[test]
+fn test_formatting() {
+    let source = textwrap::dedent(
+        "
+        2023/09/28 (743) Check Withdrawal   ; Memo: CHK#743
+            SVFCU:Personal   $-160.00
+            Expenses:Uncategorized
+    ",
+    );
+
+    insta::assert_snapshot!(LedgerBackend::format(&source),
+    @r"
+    2023/09/28 (743) Check Withdrawal
+      ; Memo: CHK#743
+      SVFCU:Personal  $-160.00
+      Expenses:Uncategorized
+
+    ",
     );
 }
