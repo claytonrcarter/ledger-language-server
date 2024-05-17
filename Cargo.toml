@@ -3,8 +3,6 @@ name = "ledger-lsp"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [build-dependencies]
 cc = "*"
 
@@ -24,3 +22,7 @@ tokio = { version = "1", features = [
 tower-lsp = { version = "0.20", features = ["runtime-tokio"] }
 tree-sitter = "0.20"
 tree-sitter-ledger = { git = "https://github.com/cbarrete/tree-sitter-ledger.git", rev = "8a841fb20ce683bfbb3469e6ba67f2851cfdf94a" }
+
+[dev-dependencies]
+insta = "1.39.0"
+textwrap = "0.16.1"

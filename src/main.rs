@@ -45,7 +45,7 @@ async fn main() {
     Server::new(stdin, stdout, socket).serve(service).await;
 }
 
-#[derive(Debug, Eq, Hash, PartialEq)]
+#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum LedgerCompletion {
     Payee(String),
     Account(String),
@@ -404,4 +404,121 @@ fn contents_of_path(path: &str) -> String {
             return String::new();
         }
     }
+}
+
+#[test]
+fn completions_by_regex() {
+    let be = LedgerBackend::Regex;
+    let source = textwrap::dedent(
+        "
+    24/01/02 Payee1
+        Account1  $1
+        Account2
+
+    24/02/03 Payee2
+        Account2  $2
+        Account3
+    ",
+    );
+    let mut completions = be.completions(&source);
+    completions.sort();
+    insta::assert_debug_snapshot!(completions,
+    @r#"
+    [
+        Payee(
+            "Payee1",
+        ),
+        Payee(
+            "Payee2",
+        ),
+        Account(
+            "Account1",
+        ),
+        Account(
+            "Account2",
+        ),
+        Account(
+            "Account3",
+        ),
+    ]
+    "#
+    );
+}
+
+#[test]
+fn completions_by_parse() {
+    let be = LedgerBackend::Parse;
+    let source = textwrap::dedent(
+        "
+    2024/01/02 Payee1
+        Account1  $1
+        Account2
+
+    2024/02/03 Payee2
+        Account2  $2
+        Account3
+    ",
+    );
+    let mut completions = be.completions(&source);
+    completions.sort();
+    insta::assert_debug_snapshot!(completions,
+    @r#"
+    [
+        Payee(
+            "Payee1",
+        ),
+        Payee(
+            "Payee2",
+        ),
+        Account(
+            "Account1",
+        ),
+        Account(
+            "Account2",
+        ),
+        Account(
+            "Account3",
+        ),
+    ]
+    "#
+    );
+}
+
+#[test]
+fn completions_by_treesitter() {
+    let be = LedgerBackend::TreeSitter;
+    let source = textwrap::dedent(
+        "
+    24/01/02 Payee1
+        Account1  $1
+        Account2
+
+    24/02/03 Payee2
+        Account2  $2
+        Account3
+    ",
+    );
+    let mut completions = be.completions(&source);
+    completions.sort();
+    insta::assert_debug_snapshot!(completions,
+    @r#"
+    [
+        Payee(
+            "Payee1",
+        ),
+        Payee(
+            "Payee2",
+        ),
+        Account(
+            "Account1",
+        ),
+        Account(
+            "Account2",
+        ),
+        Account(
+            "Account3",
+        ),
+    ]
+    "#
+    );
 }
