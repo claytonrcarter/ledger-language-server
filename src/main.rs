@@ -67,11 +67,10 @@ enum LedgerBackend {
     /// document as a whole.
     Regex,
 
-    /// An as-yet-unimplemented backend that uses tree-sitter to parse and query
-    /// a document. tree-sitter is error tolerant, and its queries are quite
-    /// specific, so this could represent the best of both worlds: correct
-    /// extraction of symbols in specific positions *and* reliable parsing of
-    /// incomplete/incorrect documents plus
+    /// A backend that uses tree-sitter to parse and query a document. tree-sitter
+    /// is error tolerant and its queries are quite specific, so may represent the
+    /// best of both worlds: correct extraction of symbols in specific positions
+    /// *and* reliable parsing of incomplete/incorrect documents
     #[allow(dead_code)]
     TreeSitter,
 }
