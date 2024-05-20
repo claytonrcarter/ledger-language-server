@@ -185,8 +185,8 @@ impl LedgerBackend {
 #[derive(Debug)]
 struct LspState {
     // see https://github.com/ebkalderon/nix-language-server/blob/master/src/backend.rs#L14-L23
-    sources: HashMap<Url, String>,
-    completions: HashMap<Url, Vec<LedgerCompletion>>,
+    sources: HashMap<String, String>,
+    completions: HashMap<String, Vec<LedgerCompletion>>,
 }
 
 #[derive(Debug)]
@@ -292,11 +292,11 @@ impl LanguageServer for Lsp {
         // on open, cache the file contents and generate initial completions
         let mut state = self.state.lock().await;
         state.sources.insert(
-            params.text_document.uri.clone(),
+            params.text_document.uri.path().to_owned(),
             params.text_document.text.clone(),
         );
         state.completions.insert(
-            params.text_document.uri,
+            params.text_document.uri.path().to_owned(),
             self.backend.completions(&params.text_document.text),
         );
     }
@@ -311,7 +311,7 @@ impl LanguageServer for Lsp {
         // (because the buffer may be dirty/incomplet/incorrect)
         let mut state = self.state.lock().await;
         state.sources.insert(
-            params.text_document.uri,
+            params.text_document.uri.path().to_owned(),
             match params.content_changes.get(0) {
                 Some(content) => content.text.clone(),
                 None => String::new(),
@@ -330,9 +330,9 @@ impl LanguageServer for Lsp {
         // TODO figure out how to send TextDocumentSaveRegistrationOptions{include_text: Some(true)}
         // ... then we could update both
         let mut state = self.state.lock().await;
-        if let Some(content) = state.sources.get(&params.text_document.uri).cloned() {
+        if let Some(content) = state.sources.get(params.text_document.uri.path()).cloned() {
             state.completions.insert(
-                params.text_document.uri.clone(),
+                params.text_document.uri.path().to_owned(),
                 self.backend.completions(&content),
             );
         }
@@ -353,14 +353,14 @@ impl LanguageServer for Lsp {
         let state = self.state.lock().await;
         let contents = match state
             .sources
-            .get(&params.text_document_position.text_document.uri)
+            .get(params.text_document_position.text_document.uri.path())
         {
             Some(contents) => contents,
             None => return Ok(None),
         };
         let completions = match state
             .completions
-            .get(&params.text_document_position.text_document.uri)
+            .get(params.text_document_position.text_document.uri.path())
         {
             Some(contents) => contents,
             None => return Ok(None),
@@ -404,7 +404,7 @@ impl LanguageServer for Lsp {
         log::info!("[formatting] {params:?}");
 
         let state = self.state.lock().await;
-        let source = match state.sources.get(&params.text_document.uri) {
+        let source = match state.sources.get(params.text_document.uri.path()) {
             Some(source) => source,
             None => return Ok(None),
         };
