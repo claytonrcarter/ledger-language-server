@@ -169,6 +169,7 @@ impl LedgerBackend {
                 let mut buf = Vec::new();
                 let mut settings = SerializerSettings::default();
                 settings.transaction_date_format = "%Y/%m/%d".to_owned();
+                settings.indent = "    ".to_owned();
                 ledger.write(&mut buf, &settings).expect("TODO");
                 String::from_utf8(buf).expect("TODO")
             }
