@@ -3,6 +3,7 @@ use log::LevelFilter;
 use regex::Regex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::{env, fs};
 use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
@@ -228,6 +229,7 @@ impl LanguageServer for Lsp {
                     file_operations: None,
                 }),
                 document_formatting_provider: Some(OneOf::Left(true)),
+                definition_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
             ..Default::default()
@@ -415,6 +417,102 @@ impl LanguageServer for Lsp {
             },
             new_text: formatted,
         }]))
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        log::info!("[goto_definition] {params:?}");
+
+        let state = self.state.lock().await;
+        let buffer_path = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .path();
+        let source = match state.sources.get(buffer_path) {
+            Some(source) => source,
+            None => return Ok(None),
+        };
+
+        let line_num = params
+            .text_document_position_params
+            .position
+            .line
+            .try_into()
+            .expect("casting u32 to usize");
+        let line = source.split('\n').nth(line_num).unwrap_or("");
+
+        let path = match line.split_once(' ') {
+            Some((maybe_include, maybe_path)) if maybe_include == "include" => {
+                let quotes: &[_] = &['"', '\''];
+                maybe_path.trim().trim_matches(quotes)
+            }
+            None | Some((_, _)) => return Ok(None),
+        };
+
+        let path_start_offset = line
+            .find(path)
+            .unwrap()
+            .try_into()
+            .expect("casting usize to u32");
+        let path_len: u32 = path.len().try_into().expect("casting usize to u32");
+        let origin_selection_range = Some(Range {
+            start: Position {
+                line: params.text_document_position_params.position.line,
+                character: path_start_offset,
+            },
+            end: Position {
+                line: params.text_document_position_params.position.line,
+                character: path_start_offset + path_len,
+            },
+        });
+
+        let url = {
+            let path = Path::new(path);
+            let path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                let dir = match Path::new(buffer_path).parent() {
+                    Some(dir) => dir,
+                    None => {
+                        log::error!("[goto_definition] Buffer has no parent dir? {buffer_path}");
+                        return Ok(None);
+                    }
+                };
+                let path = dir.join(path);
+                match path.canonicalize() {
+                    Ok(path) => path,
+                    Err(err) => {
+                        log::error!(
+                            "[goto_definition] Counld not canonicalize {}",
+                            path.to_string_lossy()
+                        );
+                        log::error!("[goto_definition] {err}");
+                        return Ok(None);
+                    }
+                }
+            };
+
+            match Url::from_file_path(&path) {
+                Ok(url) => url,
+                Err(()) => {
+                    log::error!(
+                        "[goto_definition] Unable to build url for {}",
+                        path.to_string_lossy()
+                    );
+                    return Ok(None);
+                }
+            }
+        };
+
+        Ok(Some(GotoDefinitionResponse::Link(vec![LocationLink {
+            origin_selection_range,
+            target_uri: url,
+            target_range: Range::default(),
+            target_selection_range: Range::default(),
+        }])))
     }
 }
 
