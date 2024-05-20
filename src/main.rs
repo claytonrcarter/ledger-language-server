@@ -174,8 +174,8 @@ impl LedgerBackend {
                 String::from_utf8(buf).expect("TODO")
             }
             Err(err) => {
-                log::error!("[completions_for_path] Unable to parse ledger");
-                log::error!("[completions_for_path] {err}");
+                log::error!("[format] Unable to parse ledger");
+                log::error!("[format] {err}");
                 content.to_owned()
             }
         }
@@ -373,10 +373,7 @@ impl LanguageServer for Lsp {
                 .line
                 .try_into()
                 .expect("casting u32 to usize");
-            let line = match contents.split('\n').nth(line) {
-                Some(line) => line,
-                None => "",
-            };
+            let line = contents.split('\n').nth(line).unwrap_or("");
 
             match line.chars().nth(0) {
                 Some(char) => (char.is_numeric(), char.is_whitespace()),
