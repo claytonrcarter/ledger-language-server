@@ -369,12 +369,7 @@ impl LanguageServer for Lsp {
         };
 
         let (include_payees, include_accounts) = {
-            let line = params
-                .text_document_position
-                .position
-                .line
-                .try_into()
-                .expect("casting u32 to usize");
+            let line = params.text_document_position.position.line as usize;
             let line = contents.split('\n').nth(line).unwrap_or("");
 
             match line.chars().nth(0) {
@@ -436,12 +431,7 @@ impl LanguageServer for Lsp {
             None => return Ok(None),
         };
 
-        let line_num = params
-            .text_document_position_params
-            .position
-            .line
-            .try_into()
-            .expect("casting u32 to usize");
+        let line_num = params.text_document_position_params.position.line as usize;
         let line = source.split('\n').nth(line_num).unwrap_or("");
 
         let path = match line.split_once(' ') {
@@ -452,12 +442,8 @@ impl LanguageServer for Lsp {
             None | Some((_, _)) => return Ok(None),
         };
 
-        let path_start_offset = line
-            .find(path)
-            .unwrap()
-            .try_into()
-            .expect("casting usize to u32");
-        let path_len: u32 = path.len().try_into().expect("casting usize to u32");
+        let path_start_offset = line.find(path).unwrap() as u32;
+        let path_len = path.len() as u32;
         let origin_selection_range = Some(Range {
             start: Position {
                 line: params.text_document_position_params.position.line,
