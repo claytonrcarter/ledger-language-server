@@ -164,6 +164,61 @@ impl LedgerBackend {
         completions.into_iter().collect()
     }
 
+    fn diagnostics(buffer_path: &str, content: &str) -> Vec<Diagnostic> {
+        content
+            .split('\n')
+            .enumerate()
+            .filter_map(|(i, line)| {
+                let path = match line.trim().split_once(' ') {
+                    Some((maybe_include, maybe_path)) if maybe_include == "include" => {
+                        let quotes: &[_] = &['"', '\''];
+                        maybe_path.trim().trim_matches(quotes)
+                    }
+                    None | Some((_, _)) => return None,
+                };
+
+                let path_start_offset = line.find(path).unwrap() as u32;
+                let path_len = path.len() as u32;
+
+                Some((
+                    path,
+                    Range {
+                        start: Position {
+                            line: i as u32,
+                            character: path_start_offset,
+                        },
+                        end: Position {
+                            line: i as u32,
+                            character: path_start_offset + path_len,
+                        },
+                    },
+                ))
+            })
+            .filter_map(|(path, range)| {
+                let path = Path::new(path);
+                let path = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    let dir = match Path::new(buffer_path).parent() {
+                        Some(dir) => dir,
+                        None => {
+                            log::error!("[diagnostics] Buffer has no parent dir? {buffer_path}");
+                            // TODO ??
+                            return None;
+                        }
+                    };
+                    dir.join(path)
+                };
+
+                if path.exists() {
+                    None
+                } else {
+                    Some(Diagnostic::new_simple(range, "does not exist".to_owned()))
+                }
+            })
+            .collect()
+    }
+
     fn format(content: &str) -> String {
         match ledger_parser::parse(content) {
             Ok(ledger) => {
@@ -291,7 +346,8 @@ impl LanguageServer for Lsp {
             .log_message(MessageType::INFO, "file opened!")
             .await;
 
-        // on open, cache the file contents and generate initial completions
+        // on open, cache the file contents, generate initial completions, and
+        // run dianostics
         let mut state = self.state.lock().await;
         state.sources.insert(
             params.text_document.uri.path().to_owned(),
@@ -301,6 +357,17 @@ impl LanguageServer for Lsp {
             params.text_document.uri.path().to_owned(),
             self.backend.completions(&params.text_document.text),
         );
+
+        self.client
+            .publish_diagnostics(
+                params.text_document.uri.clone(),
+                LedgerBackend::diagnostics(
+                    params.text_document.uri.path(),
+                    &params.text_document.text,
+                ),
+                None,
+            )
+            .await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -309,8 +376,9 @@ impl LanguageServer for Lsp {
             .log_message(MessageType::INFO, "file changed!")
             .await;
 
-        // on update, only cache the file contents and don't touch the completions
-        // (because the buffer may be dirty/incomplet/incorrect)
+        // on update, only cache the file contents and don't touch the
+        // completions or diagnostics (because the buffer may be
+        // dirty/incomplete/incorrect)
         let mut state = self.state.lock().await;
         state.sources.insert(
             params.text_document.uri.path().to_owned(),
@@ -327,8 +395,8 @@ impl LanguageServer for Lsp {
             .log_message(MessageType::INFO, "file saved!")
             .await;
 
-        // on save, regenerate the completions, but we don't have access to
-        // updated buffer contents
+        // on save, regenerate the completions and diagnostics, but don't cache
+        // the file contents (params don't have access to updated buffer contents)
         // TODO figure out how to send TextDocumentSaveRegistrationOptions{include_text: Some(true)}
         // ... then we could update both
         let mut state = self.state.lock().await;
@@ -337,6 +405,14 @@ impl LanguageServer for Lsp {
                 params.text_document.uri.path().to_owned(),
                 self.backend.completions(&content),
             );
+
+            self.client
+                .publish_diagnostics(
+                    params.text_document.uri.clone(),
+                    LedgerBackend::diagnostics(params.text_document.uri.path(), &content),
+                    None,
+                )
+                .await;
         }
     }
 
