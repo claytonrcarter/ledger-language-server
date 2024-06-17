@@ -225,7 +225,11 @@ impl LedgerBackend {
                 let mut buf = Vec::new();
                 let mut settings = SerializerSettings::default();
                 settings.transaction_date_format = "%Y/%m/%d".to_owned();
-                settings.indent = "    ".to_owned();
+                settings.indent_posting = Some(" ".repeat(4));
+                settings.indent_amount = Some(" ".repeat(2));
+                settings.indent_comment = Some(" ".to_owned());
+                settings.align_postings = true;
+                settings.posting_comments_sameline = true;
                 ledger.write(&mut buf, &settings).expect("TODO");
                 String::from_utf8(buf).expect("TODO")
             }
@@ -727,6 +731,7 @@ fn test_formatting() {
         "
         2023/09/28 (743) Check Withdrawal   ; Memo: CHK#743
             SVFCU:Personal   $-160.00
+            SVFCU:Personal   $-16.00
             Expenses:Uncategorized
     ",
     );
@@ -734,9 +739,10 @@ fn test_formatting() {
     insta::assert_snapshot!(LedgerBackend::format(&source),
     @r"
     2023/09/28 (743) Check Withdrawal
-      ; Memo: CHK#743
-      SVFCU:Personal  $-160.00
-      Expenses:Uncategorized
+        ; Memo: CHK#743
+        SVFCU:Personal                          $-160.00
+        SVFCU:Personal                           $-16.00
+        Expenses:Uncategorized
 
     ",
     );
