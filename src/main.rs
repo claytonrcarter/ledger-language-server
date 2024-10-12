@@ -230,6 +230,9 @@ impl LedgerBackend {
                 settings.indent_comment = Some(" ".to_owned());
                 settings.align_postings = true;
                 settings.posting_comments_sameline = true;
+                settings.sort_transactions = true;
+                settings.condense_empty_lines = true;
+                settings.insert_empty_lines = true;
                 ledger.write(&mut buf, &settings).expect("TODO");
                 String::from_utf8(buf).expect("TODO")
             }
