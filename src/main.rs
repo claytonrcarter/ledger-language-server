@@ -17,7 +17,12 @@ async fn main() {
             let print_completions = true;
 
             let be = LedgerBackend::new();
-            dump_debug("tree-sitter", be.completions(&source), print_completions);
+            let mut visited = HashSet::new();
+            dump_debug(
+                "tree-sitter",
+                be.completions(&file, &source, &mut visited),
+                print_completions,
+            );
 
             return;
         }
@@ -47,14 +52,23 @@ enum LedgerCompletion {
 }
 
 #[derive(Debug)]
-struct LedgerBackend {}
+struct LedgerBackend {
+    _test_included_content: Option<String>,
+}
 
 impl LedgerBackend {
     fn new() -> Self {
-        Self {}
+        Self {
+            _test_included_content: None,
+        }
     }
 
-    fn completions(&self, content: &str) -> Vec<LedgerCompletion> {
+    fn completions(
+        &self,
+        buffer_path: &str,
+        content: &str,
+        visited: &mut HashSet<String>,
+    ) -> Vec<LedgerCompletion> {
         let mut completions = HashSet::new();
 
         let mut parser = Parser::new();
@@ -65,24 +79,66 @@ impl LedgerBackend {
 
         let query = tree_sitter::Query::new(
             tree_sitter_ledger::language(),
-            "(payee) @payee (account) @account",
+            "(payee) @payee (account) @account (filename) @filename",
         )
         .expect("creating tree-sitter query");
 
         let mut cursor = tree_sitter::QueryCursor::new();
         let source = content.as_bytes();
         for m in cursor.matches(&query, tree.root_node(), source) {
+            // (payee) @payee
             for n in m.nodes_for_capture_index(0) {
                 let payee = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
                     .expect("converting bytes back to text")
                     .to_string();
                 completions.insert(LedgerCompletion::Payee(payee));
             }
+
+            // (account) @account
             for n in m.nodes_for_capture_index(1) {
                 let account = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
                     .expect("converting bytes back to text")
                     .to_string();
                 completions.insert(LedgerCompletion::Account(account));
+            }
+
+            // (filename) @filename
+            for n in m.nodes_for_capture_index(2) {
+                let filename = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
+                    .expect("converting bytes back to text");
+
+                let path = Path::new(filename);
+                let path = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    let dir = match Path::new(buffer_path).parent() {
+                        Some(dir) => dir,
+                        None => {
+                            log::error!("[diagnostics] Buffer has no parent dir? {buffer_path}");
+                            // TODO ??
+                            continue;
+                        }
+                    };
+                    dir.join(path)
+                };
+                let filename = path.as_os_str().to_str().unwrap_or(filename);
+
+                if visited.contains(filename) {
+                    continue;
+                } else {
+                    visited.insert(filename.to_string());
+                }
+
+                let included_content = self
+                    ._test_included_content
+                    .as_ref()
+                    .map_or_else(|| contents_of_path(filename), |content| content.to_string());
+
+                self.completions(filename, &included_content, visited)
+                    .into_iter()
+                    .for_each(|c| {
+                        completions.insert(c);
+                    })
             }
         }
 
@@ -285,9 +341,15 @@ impl LanguageServer for Lsp {
             params.text_document.uri.path().to_owned(),
             params.text_document.text.clone(),
         );
+        let mut visited = HashSet::new();
+
         state.completions.insert(
             params.text_document.uri.path().to_owned(),
-            self.backend.completions(&params.text_document.text),
+            self.backend.completions(
+                params.text_document.uri.path(),
+                &params.text_document.text,
+                &mut visited,
+            ),
         );
 
         self.client
@@ -333,9 +395,11 @@ impl LanguageServer for Lsp {
         // ... then we could update both
         let mut state = self.state.lock().await;
         if let Some(content) = state.sources.get(params.text_document.uri.path()).cloned() {
+            let mut visited = HashSet::new();
             state.completions.insert(
                 params.text_document.uri.path().to_owned(),
-                self.backend.completions(&content),
+                self.backend
+                    .completions(params.text_document.uri.path(), &content, &mut visited),
             );
 
             self.client
@@ -525,11 +589,23 @@ fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>, print_completions:
     }
 }
 
+/// path must be canonicalize-able; either canonical on it's own, or valid
+/// relative to cwd
 fn contents_of_path(path: &str) -> String {
-    match fs::read_to_string(path) {
+    let p = Path::new(path);
+
+    let p = match p.canonicalize() {
+        Ok(p) => p,
+        Err(err) => {
+            log::error!("[completions_for_path] {err}");
+            return String::new();
+        }
+    };
+
+    match fs::read_to_string(p) {
         Ok(contents) => contents,
         Err(err) => {
-            log::error!("[completions_for_path] Unable to open file");
+            log::error!("[completions_for_path] Unable to open file '{path}'");
             log::error!("[completions_for_path] {err}");
             return String::new();
         }
@@ -554,7 +630,8 @@ fn test_completions() {
         Three & Four
     ",
     );
-    let mut completions = be.completions(&source);
+    let mut visited = HashSet::new();
+    let mut completions = be.completions("unused in test", &source, &mut visited);
     completions.sort();
     insta::assert_debug_snapshot!(completions,
     @r#"
@@ -582,6 +659,42 @@ fn test_completions() {
         ),
         Account(
             "Three & Four",
+        ),
+    ]
+    "#
+    );
+}
+
+#[test]
+fn test_completions_from_included_files() {
+    let source = "include foo.ledger";
+    let included = textwrap::dedent(
+        "
+        24/01/02 Payee1
+            Account1  $1
+            Account2
+        ",
+    );
+
+    let be = LedgerBackend {
+        _test_included_content: Some(included),
+    };
+    let mut visited = HashSet::new();
+
+    let mut completions = be.completions("unused in test", &source, &mut visited);
+
+    completions.sort();
+    insta::assert_debug_snapshot!(completions,
+    @r#"
+    [
+        Payee(
+            "Payee1",
+        ),
+        Account(
+            "Account1",
+        ),
+        Account(
+            "Account2",
         ),
     ]
     "#
