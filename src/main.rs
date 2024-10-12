@@ -47,8 +47,9 @@ async fn main() {
 
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum LedgerCompletion {
-    Payee(String),
     Account(String),
+    Payee(String),
+    Tag(String),
 }
 
 #[derive(Debug)]
@@ -79,7 +80,7 @@ impl LedgerBackend {
 
         let query = tree_sitter::Query::new(
             tree_sitter_ledger::language(),
-            "(payee) @payee (account) @account (filename) @filename",
+            "(payee) @payee (account) @account (note) @note (filename) @filename",
         )
         .expect("creating tree-sitter query");
 
@@ -102,8 +103,28 @@ impl LedgerBackend {
                 completions.insert(LedgerCompletion::Account(account));
             }
 
-            // (filename) @filename
+            // (note) @note
             for n in m.nodes_for_capture_index(2) {
+                let note = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
+                    .expect("converting bytes back to text");
+                note.split('\n')
+                    .filter_map(|l| {
+                        match l
+                            // https://ledger-cli.org/doc/ledger3.html#Commenting-on-your-Journal
+                            .trim_start_matches([' ', '\t', ';', '#', '%', '|', '*'])
+                            .split_once(": ")
+                        {
+                            Some((tag, _)) if !tag.contains(' ') => Some(tag.to_owned()),
+                            Some(_) | None => None,
+                        }
+                    })
+                    .for_each(|tag| {
+                        completions.insert(LedgerCompletion::Tag(tag));
+                    });
+            }
+
+            // (filename) @filename
+            for n in m.nodes_for_capture_index(3) {
                 let filename = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
                     .expect("converting bytes back to text");
 
@@ -440,26 +461,41 @@ impl LanguageServer for Lsp {
             None => return Ok(None),
         };
 
-        let (include_payees, include_accounts) = {
+        let (include_payees, include_accounts, include_tags) = {
             let line = params.text_document_position.position.line as usize;
             let line = contents.split('\n').nth(line).unwrap_or("");
 
-            match line.chars().nth(0) {
-                Some(char) => (char.is_numeric(), char.is_whitespace()),
-                None => (false, false),
+            match (line.chars().nth(0), line.trim().chars().nth(0)) {
+                // posting comment/note
+                (Some(char1), Some(';' | '#' | '%' | '|' | '*')) if char1.is_whitespace() => {
+                    (false, false, true)
+                }
+
+                // posting account
+                (Some(char1), _) if char1.is_whitespace() => (false, true, false),
+
+                // transaction date
+                (Some(char1), _) if char1.is_numeric() => (true, false, false),
+
+                (_, _) => (false, false, false),
             }
         };
 
         let completions = completions
             .into_iter()
             .filter_map(|i| match i {
-                LedgerCompletion::Payee(payee) if include_payees => Some(
-                    CompletionItem::new_simple(payee.clone(), "Payee".to_string()),
-                ),
                 LedgerCompletion::Account(account) if include_accounts => Some(
                     CompletionItem::new_simple(account.clone(), "Account".to_string()),
                 ),
-                LedgerCompletion::Payee(_) | LedgerCompletion::Account(_) => None,
+                LedgerCompletion::Payee(payee) if include_payees => Some(
+                    CompletionItem::new_simple(payee.clone(), "Payee".to_string()),
+                ),
+                LedgerCompletion::Tag(tag) if include_tags => {
+                    Some(CompletionItem::new_simple(tag.clone(), "Tag".to_string()))
+                }
+                LedgerCompletion::Account(_)
+                | LedgerCompletion::Payee(_)
+                | LedgerCompletion::Tag(_) => None,
             })
             .collect();
 
@@ -576,16 +612,22 @@ impl LanguageServer for Lsp {
 
 fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>, print_completions: bool) {
     println!("[{kind}] {} total", completions.len());
-    let (payees, accounts): (Vec<_>, Vec<_>) = completions.iter().partition(|c| match c {
-        LedgerCompletion::Payee(_) => true,
-        LedgerCompletion::Account(_) => false,
+    let mut payees = Vec::new();
+    let mut accounts = Vec::new();
+    let mut tags = Vec::new();
+    completions.iter().for_each(|c| match c {
+        LedgerCompletion::Account(account) => accounts.push(account),
+        LedgerCompletion::Payee(payee) => payees.push(payee),
+        LedgerCompletion::Tag(tag) => tags.push(tag),
     });
-    println!("[{kind}] {} payees", payees.len());
     println!("[{kind}] {} accounts", accounts.len());
+    println!("[{kind}] {} payees", payees.len());
+    println!("[{kind}] {} tags", tags.len());
 
     if print_completions {
-        dbg!(payees);
         dbg!(accounts);
+        dbg!(payees);
+        dbg!(tags);
     }
 }
 
@@ -636,15 +678,6 @@ fn test_completions() {
     insta::assert_debug_snapshot!(completions,
     @r#"
     [
-        Payee(
-            "Mom & Dad",
-        ),
-        Payee(
-            "Payee1",
-        ),
-        Payee(
-            "Payee2",
-        ),
         Account(
             "Account1",
         ),
@@ -659,6 +692,53 @@ fn test_completions() {
         ),
         Account(
             "Three & Four",
+        ),
+        Payee(
+            "Mom & Dad",
+        ),
+        Payee(
+            "Payee1",
+        ),
+        Payee(
+            "Payee2",
+        ),
+    ]
+    "#
+    );
+}
+
+#[test]
+fn test_completions_tags() {
+    let be = LedgerBackend::new();
+    let source = textwrap::dedent(
+        "
+    24/01/02 Payee1
+        ; Tag1: foo
+        ; Tag2: bar
+        Account1  $1
+        Account2
+    ",
+    );
+    let mut visited = HashSet::new();
+    let mut completions = be.completions("unused in test", &source, &mut visited);
+    completions.sort();
+    insta::assert_debug_snapshot!(completions,
+    @r#"
+    [
+        Account(
+            "Account1",
+        ),
+        Account(
+            "Account2",
+        ),
+        Payee(
+            "Payee1",
+        ),
+        Tag(
+            "Tag1",
+        ),
+        Tag(
+            "Tag2",
         ),
     ]
     "#
@@ -687,14 +767,14 @@ fn test_completions_from_included_files() {
     insta::assert_debug_snapshot!(completions,
     @r#"
     [
-        Payee(
-            "Payee1",
-        ),
         Account(
             "Account1",
         ),
         Account(
             "Account2",
+        ),
+        Payee(
+            "Payee1",
         ),
     ]
     "#
