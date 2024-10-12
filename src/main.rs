@@ -8,6 +8,7 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 use tree_sitter::Parser;
+use walkdir::WalkDir;
 
 #[tokio::main]
 async fn main() {
@@ -48,6 +49,7 @@ async fn main() {
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum LedgerCompletion {
     Account(String),
+    File(String),
     Payee(String),
     Tag(String),
 }
@@ -55,12 +57,14 @@ enum LedgerCompletion {
 #[derive(Debug)]
 struct LedgerBackend {
     _test_included_content: Option<String>,
+    _test_project_files: Option<Vec<String>>,
 }
 
 impl LedgerBackend {
     fn new() -> Self {
         Self {
             _test_included_content: None,
+            _test_project_files: None,
         }
     }
 
@@ -71,6 +75,44 @@ impl LedgerBackend {
         visited: &mut HashSet<String>,
     ) -> Vec<LedgerCompletion> {
         let mut completions = HashSet::new();
+
+        let current_dir = match Path::new(buffer_path).parent() {
+            Some(dir) => dir,
+            None => {
+                log::error!("[diagnostics] Buffer has no parent dir? {buffer_path}");
+                // TODO ??
+                return Vec::new();
+            }
+        };
+
+        // only crawl files once, from the dir containing the buffer
+        if visited.is_empty() {
+            let project_files = self._test_project_files.clone().unwrap_or_else(|| {
+                WalkDir::new(current_dir)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.file_name()
+                            .to_str()
+                            .is_some_and(|f| f.ends_with(".ledger"))
+                    })
+                    .map(|f| {
+                        f.path()
+                            .strip_prefix(current_dir)
+                            .unwrap_or_else(|_err| f.path())
+                            .as_os_str()
+                            .to_string_lossy()
+                            .to_string()
+                    })
+                    .collect()
+            });
+
+            project_files.into_iter().for_each(|f| {
+                if f.ends_with(".ledger") {
+                    completions.insert(LedgerCompletion::File(f.clone()));
+                }
+            });
+        }
 
         let mut parser = Parser::new();
         parser
@@ -132,15 +174,7 @@ impl LedgerBackend {
                 let path = if path.is_absolute() {
                     path.to_path_buf()
                 } else {
-                    let dir = match Path::new(buffer_path).parent() {
-                        Some(dir) => dir,
-                        None => {
-                            log::error!("[diagnostics] Buffer has no parent dir? {buffer_path}");
-                            // TODO ??
-                            continue;
-                        }
-                    };
-                    dir.join(path)
+                    current_dir.join(path)
                 };
                 let filename = path.as_os_str().to_str().unwrap_or(filename);
 
@@ -461,23 +495,26 @@ impl LanguageServer for Lsp {
             None => return Ok(None),
         };
 
-        let (include_payees, include_accounts, include_tags) = {
+        let (include_payees, include_files, include_accounts, include_tags) = {
             let line = params.text_document_position.position.line as usize;
             let line = contents.split('\n').nth(line).unwrap_or("");
 
             match (line.chars().nth(0), line.trim().chars().nth(0)) {
                 // posting comment/note
                 (Some(char1), Some(';' | '#' | '%' | '|' | '*')) if char1.is_whitespace() => {
-                    (false, false, true)
+                    (false, false, false, true)
                 }
 
                 // posting account
-                (Some(char1), _) if char1.is_whitespace() => (false, true, false),
+                (Some(char1), _) if char1.is_whitespace() => (false, false, true, false),
 
                 // transaction date
-                (Some(char1), _) if char1.is_numeric() => (true, false, false),
+                (Some(char1), _) if char1.is_numeric() => (true, false, false, false),
 
-                (_, _) => (false, false, false),
+                // include directive
+                (Some('i'), _) if line.starts_with("include") => (false, true, false, false),
+
+                (_, _) => (false, false, false, false),
             }
         };
 
@@ -487,6 +524,9 @@ impl LanguageServer for Lsp {
                 LedgerCompletion::Account(account) if include_accounts => Some(
                     CompletionItem::new_simple(account.clone(), "Account".to_string()),
                 ),
+                LedgerCompletion::File(filename) if include_files => Some(
+                    CompletionItem::new_simple(filename.clone(), "File".to_string()),
+                ),
                 LedgerCompletion::Payee(payee) if include_payees => Some(
                     CompletionItem::new_simple(payee.clone(), "Payee".to_string()),
                 ),
@@ -494,6 +534,7 @@ impl LanguageServer for Lsp {
                     Some(CompletionItem::new_simple(tag.clone(), "Tag".to_string()))
                 }
                 LedgerCompletion::Account(_)
+                | LedgerCompletion::File(_)
                 | LedgerCompletion::Payee(_)
                 | LedgerCompletion::Tag(_) => None,
             })
@@ -613,19 +654,23 @@ impl LanguageServer for Lsp {
 fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>, print_completions: bool) {
     println!("[{kind}] {} total", completions.len());
     let mut payees = Vec::new();
+    let mut files = Vec::new();
     let mut accounts = Vec::new();
     let mut tags = Vec::new();
     completions.iter().for_each(|c| match c {
         LedgerCompletion::Account(account) => accounts.push(account),
+        LedgerCompletion::File(filename) => files.push(filename),
         LedgerCompletion::Payee(payee) => payees.push(payee),
         LedgerCompletion::Tag(tag) => tags.push(tag),
     });
     println!("[{kind}] {} accounts", accounts.len());
+    println!("[{kind}] {} files", files.len());
     println!("[{kind}] {} payees", payees.len());
     println!("[{kind}] {} tags", tags.len());
 
     if print_completions {
         dbg!(accounts);
+        dbg!(files);
         dbg!(payees);
         dbg!(tags);
     }
@@ -656,7 +701,10 @@ fn contents_of_path(path: &str) -> String {
 
 #[test]
 fn test_completions() {
-    let be = LedgerBackend::new();
+    let be = LedgerBackend {
+        _test_included_content: None,
+        _test_project_files: Some(vec![]),
+    };
     let source = textwrap::dedent(
         "
     24/01/02 Payee1
@@ -709,7 +757,10 @@ fn test_completions() {
 
 #[test]
 fn test_completions_tags() {
-    let be = LedgerBackend::new();
+    let be = LedgerBackend {
+        _test_included_content: None,
+        _test_project_files: Some(vec![]),
+    };
     let source = textwrap::dedent(
         "
     24/01/02 Payee1
@@ -746,6 +797,34 @@ fn test_completions_tags() {
 }
 
 #[test]
+fn test_completions_files() {
+    let be = LedgerBackend {
+        _test_included_content: None,
+        _test_project_files: Some(
+            vec!["foo.ledger", "bar.yaml", "baz/qux.ledger"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect(),
+        ),
+    };
+    let mut visited = HashSet::new();
+    let mut completions = be.completions("unused in test", "", &mut visited);
+    completions.sort();
+    insta::assert_debug_snapshot!(completions,
+    @r#"
+    [
+        File(
+            "baz/qux.ledger",
+        ),
+        File(
+            "foo.ledger",
+        ),
+    ]
+    "#
+    );
+}
+
+#[test]
 fn test_completions_from_included_files() {
     let source = "include foo.ledger";
     let included = textwrap::dedent(
@@ -758,6 +837,7 @@ fn test_completions_from_included_files() {
 
     let be = LedgerBackend {
         _test_included_content: Some(included),
+        _test_project_files: Some(vec![]),
     };
     let mut visited = HashSet::new();
 
