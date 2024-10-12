@@ -1,5 +1,4 @@
-use ledger_parser::{LedgerItem, Serializer, SerializerSettings};
-use regex::Regex;
+use ledger_parser::{Serializer, SerializerSettings};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -17,13 +16,7 @@ async fn main() {
             let source = contents_of_path(&file);
             let print_completions = true;
 
-            let be = LedgerBackend::Regex;
-            dump_debug("regex", be.completions(&source), print_completions);
-
-            let be = LedgerBackend::Parse;
-            dump_debug("parse", be.completions(&source), print_completions);
-
-            let be = LedgerBackend::TreeSitter;
+            let be = LedgerBackend::new();
             dump_debug("tree-sitter", be.completions(&source), print_completions);
 
             return;
@@ -42,7 +35,7 @@ async fn main() {
             sources: HashMap::new(),
             completions: HashMap::new(),
         }),
-        backend: LedgerBackend::TreeSitter,
+        backend: LedgerBackend::new(),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
@@ -54,110 +47,42 @@ enum LedgerCompletion {
 }
 
 #[derive(Debug)]
-enum LedgerBackend {
-    /// A backend that actually parses actual ledger parser to extract data from
-    /// the document. This backend is the most correct, but the least reliable
-    /// because it will fail if the document is not (more or less) syntactically
-    /// correct.
-    #[allow(dead_code)]
-    Parse,
-
-    /// A backend that extracts data from the document using regexs. This backend
-    /// is the most prone to false positives due to imperfect regex patterns, but
-    /// it is the most reliable because it operated line by line instead of on the
-    /// document as a whole.
-    Regex,
-
-    /// A backend that uses tree-sitter to parse and query a document. tree-sitter
-    /// is error tolerant and its queries are quite specific, so may represent the
-    /// best of both worlds: correct extraction of symbols in specific positions
-    /// *and* reliable parsing of incomplete/incorrect documents
-    #[allow(dead_code)]
-    TreeSitter,
-}
+struct LedgerBackend {}
 
 impl LedgerBackend {
+    fn new() -> Self {
+        Self {}
+    }
+
     fn completions(&self, content: &str) -> Vec<LedgerCompletion> {
         let mut completions = HashSet::new();
 
-        match self {
-            LedgerBackend::Parse => {
-                let ledger = match ledger_parser::parse(content) {
-                    Ok(ledger) => ledger,
-                    Err(err) => {
-                        log::error!("[completions_for_path] Unable to parse ledger");
-                        log::error!("[completions_for_path] {err}");
-                        return Vec::new();
-                    }
-                };
+        let mut parser = Parser::new();
+        parser
+            .set_language(tree_sitter_ledger::language())
+            .expect("loading Ledger tree-sitter grammar");
+        let tree = parser.parse(content, None).unwrap();
 
-                for item in ledger.items {
-                    let transaction = match item {
-                        LedgerItem::Transaction(transaction) => transaction,
-                        LedgerItem::EmptyLine
-                        | LedgerItem::LineComment(_)
-                        | LedgerItem::CommodityPrice(_)
-                        | LedgerItem::Include(_)
-                        | _ => continue,
-                    };
-                    if let Some(description) = transaction.description {
-                        completions.insert(LedgerCompletion::Payee(description));
-                    }
+        let query = tree_sitter::Query::new(
+            tree_sitter_ledger::language(),
+            "(payee) @payee (account) @account",
+        )
+        .expect("creating tree-sitter query");
 
-                    for posting in transaction.postings {
-                        completions.insert(LedgerCompletion::Account(posting.account));
-                    }
-                }
+        let mut cursor = tree_sitter::QueryCursor::new();
+        let source = content.as_bytes();
+        for m in cursor.matches(&query, tree.root_node(), source) {
+            for n in m.nodes_for_capture_index(0) {
+                let payee = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
+                    .expect("converting bytes back to text")
+                    .to_string();
+                completions.insert(LedgerCompletion::Payee(payee));
             }
-            LedgerBackend::Regex => {
-                // date=date (code) payee ; comment
-                let payee_re = "(?m)^\\d[^ ]+( \\(.+\\))? (.+)(;|$)";
-                // TODO compile this once (lazy static?)
-                let re = Regex::new(payee_re).expect("compile regex");
-                for caps in re.captures_iter(content) {
-                    completions.insert(LedgerCompletion::Payee(caps[2].trim().to_string()));
-                }
-
-                // <indent>account  ... or <indent>account\n
-                // also handle (ie ignore) <indent><comment>
-                let account_re = "(?m)^ +([^;\\n]+)";
-                let re = Regex::new(account_re).expect("compile regex");
-                for caps in re.captures_iter(content) {
-                    let account = caps[1].trim().split("  ").next().unwrap();
-                    if !account.is_empty() {
-                        completions.insert(LedgerCompletion::Account(account.to_string()));
-                    }
-                }
-            }
-            LedgerBackend::TreeSitter => {
-                let mut parser = Parser::new();
-                parser
-                    .set_language(tree_sitter_ledger::language())
-                    .expect("loading Ledger tree-sitter grammar");
-                let tree = parser.parse(content, None).unwrap();
-
-                let query = tree_sitter::Query::new(
-                    tree_sitter_ledger::language(),
-                    "(payee) @payee (account) @account",
-                )
-                .expect("creating tree-sitter query");
-
-                let mut cursor = tree_sitter::QueryCursor::new();
-                let source = content.as_bytes();
-                for m in cursor.matches(&query, tree.root_node(), source) {
-                    for n in m.nodes_for_capture_index(0) {
-                        let payee = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
-                            .expect("converting bytes back to text")
-                            .to_string();
-                        completions.insert(LedgerCompletion::Payee(payee));
-                    }
-                    for n in m.nodes_for_capture_index(1) {
-                        let account = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
-                            .expect("converting bytes back to text")
-                            .to_string();
-                        completions.insert(LedgerCompletion::Account(account));
-                    }
-                }
+            for n in m.nodes_for_capture_index(1) {
+                let account = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
+                    .expect("converting bytes back to text")
+                    .to_string();
+                completions.insert(LedgerCompletion::Account(account));
             }
         }
 
@@ -612,86 +537,8 @@ fn contents_of_path(path: &str) -> String {
 }
 
 #[test]
-fn test_completions_by_regex() {
-    let be = LedgerBackend::Regex;
-    let source = textwrap::dedent(
-        "
-    24/01/02 Payee1
-        Account1  $1
-        Account2
-
-    24/02/03 Payee2
-        Account2  $2
-        Account3
-    ",
-    );
-    let mut completions = be.completions(&source);
-    completions.sort();
-    insta::assert_debug_snapshot!(completions,
-    @r#"
-    [
-        Payee(
-            "Payee1",
-        ),
-        Payee(
-            "Payee2",
-        ),
-        Account(
-            "Account1",
-        ),
-        Account(
-            "Account2",
-        ),
-        Account(
-            "Account3",
-        ),
-    ]
-    "#
-    );
-}
-
-#[test]
-fn test_completions_by_parse() {
-    let be = LedgerBackend::Parse;
-    let source = textwrap::dedent(
-        "
-    2024/01/02 Payee1
-        Account1  $1
-        Account2
-
-    2024/02/03 Payee2
-        Account2  $2
-        Account3
-    ",
-    );
-    let mut completions = be.completions(&source);
-    completions.sort();
-    insta::assert_debug_snapshot!(completions,
-    @r#"
-    [
-        Payee(
-            "Payee1",
-        ),
-        Payee(
-            "Payee2",
-        ),
-        Account(
-            "Account1",
-        ),
-        Account(
-            "Account2",
-        ),
-        Account(
-            "Account3",
-        ),
-    ]
-    "#
-    );
-}
-
-#[test]
-fn test_completions_by_treesitter() {
-    let be = LedgerBackend::TreeSitter;
+fn test_completions() {
+    let be = LedgerBackend::new();
     let source = textwrap::dedent(
         "
     24/01/02 Payee1
