@@ -21,7 +21,8 @@ tokio = { version = "1", features = [
 ] }
 tower-lsp = { version = "0.20", features = ["runtime-tokio"] }
 tree-sitter = "0.20"
-tree-sitter-ledger = { git = "https://github.com/cbarrete/tree-sitter-ledger.git", rev = "8a841fb20ce683bfbb3469e6ba67f2851cfdf94a" }
+tree-sitter-ledger = { path = "../tree-sitter/tree-sitter-ledger" }
+# tree-sitter-ledger = { git = "https://github.com/cbarrete/tree-sitter-ledger.git", rev = "8a841fb20ce683bfbb3469e6ba67f2851cfdf94a" }
 
 [dev-dependencies]
 insta = "1.39.0"

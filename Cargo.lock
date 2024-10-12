@@ -1219,7 +1219,6 @@ dependencies = [
 [[package]]
 name = "tree-sitter-ledger"
 version = "0.0.1"
-source = "git+https://github.com/cbarrete/tree-sitter-ledger.git?rev=8a841fb20ce683bfbb3469e6ba67f2851cfdf94a#8a841fb20ce683bfbb3469e6ba67f2851cfdf94a"
 dependencies = [
  "cc",
  "tree-sitter",

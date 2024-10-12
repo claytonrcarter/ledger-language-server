@@ -698,6 +698,10 @@ fn test_completions_by_treesitter() {
     24/02/03 Payee2
         Account2  $2
         Account3
+
+    24/02/03 Mom & Dad
+        One & Two  $2
+        Three & Four
     ",
     );
     let mut completions = be.completions(&source);
@@ -705,6 +709,9 @@ fn test_completions_by_treesitter() {
     insta::assert_debug_snapshot!(completions,
     @r#"
     [
+        Payee(
+            "Mom & Dad",
+        ),
         Payee(
             "Payee1",
         ),
@@ -719,6 +726,12 @@ fn test_completions_by_treesitter() {
         ),
         Account(
             "Account3",
+        ),
+        Account(
+            "One & Two",
+        ),
+        Account(
+            "Three & Four",
         ),
     ]
     "#
