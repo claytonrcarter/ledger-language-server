@@ -1,5 +1,4 @@
 use ledger_parser::{LedgerItem, Serializer, SerializerSettings};
-use log::LevelFilter;
 use regex::Regex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -13,10 +12,10 @@ use tree_sitter::Parser;
 
 #[tokio::main]
 async fn main() {
-    if let Some(arg) = env::args().nth(1) {
-        if arg == "--debug" {
-            let source = contents_of_path("/Users/crcarter/Documents/Bookkeeping/ledger/personal-archive/clayton-2023-09-05-2023-12-03.ledger");
-            let print_completions = false;
+    match (env::args().nth(1), env::args().nth(2)) {
+        (Some(arg), Some(file)) if arg == "--debug" => {
+            let source = contents_of_path(&file);
+            let print_completions = true;
 
             let be = LedgerBackend::Regex;
             dump_debug("regex", be.completions(&source), print_completions);
@@ -26,9 +25,10 @@ async fn main() {
 
             let be = LedgerBackend::TreeSitter;
             dump_debug("tree-sitter", be.completions(&source), print_completions);
-        }
 
-        return;
+            return;
+        }
+        (_, _) => {}
     }
 
     // simple_logging::log_to_file("ledger-lsp.log", log::LevelFilter::max())
