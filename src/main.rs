@@ -49,6 +49,7 @@ async fn main() {
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum LedgerCompletion {
     Account(String),
+    Directive(String),
     File(String),
     Payee(String),
     Tag(String),
@@ -85,8 +86,12 @@ impl LedgerBackend {
             }
         };
 
-        // only crawl files once, from the dir containing the buffer
+        // "is empty" is a proxy for "this is the first call" to completions,
+        // not a recursive call to included files
         if visited.is_empty() {
+            self.completions_insert_directives(&mut completions);
+
+            // only crawl files once, from the dir containing the buffer
             let project_files = self._test_project_files.clone().unwrap_or_else(|| {
                 WalkDir::new(current_dir)
                     .into_iter()
@@ -198,6 +203,24 @@ impl LedgerBackend {
         }
 
         completions.into_iter().collect()
+    }
+
+    fn completions_insert_directives(&self, completions: &mut HashSet<LedgerCompletion>) {
+        // only worrying about the most common for now
+        // https://ledger-cli.org/doc/ledger3.html#Command-Directives
+        vec![
+            "account",
+            "alias",
+            "commodity",
+            "include",
+            "payee",
+            "tag",
+            "year",
+        ]
+        .into_iter()
+        .for_each(|s| {
+            completions.insert(LedgerCompletion::Directive(s.to_string()));
+        });
     }
 
     fn diagnostics(buffer_path: &str, content: &str) -> Vec<Diagnostic> {
@@ -497,9 +520,10 @@ impl LanguageServer for Lsp {
 
         #[derive(Default)]
         struct CompletionsToInclude {
-            payees: bool,
-            files: bool,
             accounts: bool,
+            directives: bool,
+            files: bool,
+            payees: bool,
             tags: bool,
         }
 
@@ -516,9 +540,10 @@ impl LanguageServer for Lsp {
                     }
                 }
 
-                // posting account
+                // posting account or subdirective
                 (Some(char1), _) if char1.is_whitespace() => CompletionsToInclude {
                     accounts: true,
+                    directives: true,
                     ..CompletionsToInclude::default()
                 },
 
@@ -534,7 +559,10 @@ impl LanguageServer for Lsp {
                     ..CompletionsToInclude::default()
                 },
 
-                (_, _) => CompletionsToInclude::default(),
+                (_, _) => CompletionsToInclude {
+                    directives: true,
+                    ..CompletionsToInclude::default()
+                },
             }
         };
 
@@ -543,6 +571,9 @@ impl LanguageServer for Lsp {
             .filter_map(|i| match i {
                 LedgerCompletion::Account(account) if include.accounts => Some(
                     CompletionItem::new_simple(account.clone(), "Account".to_string()),
+                ),
+                LedgerCompletion::Directive(directive) if include.directives => Some(
+                    CompletionItem::new_simple(directive.clone(), "Directive".to_string()),
                 ),
                 LedgerCompletion::File(filename) if include.files => Some(
                     CompletionItem::new_simple(filename.clone(), "File".to_string()),
@@ -554,6 +585,7 @@ impl LanguageServer for Lsp {
                     Some(CompletionItem::new_simple(tag.clone(), "Tag".to_string()))
                 }
                 LedgerCompletion::Account(_)
+                | LedgerCompletion::Directive(_)
                 | LedgerCompletion::File(_)
                 | LedgerCompletion::Payee(_)
                 | LedgerCompletion::Tag(_) => None,
@@ -673,23 +705,27 @@ impl LanguageServer for Lsp {
 
 fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>, print_completions: bool) {
     println!("[{kind}] {} total", completions.len());
-    let mut payees = Vec::new();
-    let mut files = Vec::new();
     let mut accounts = Vec::new();
+    let mut directives = Vec::new();
+    let mut files = Vec::new();
+    let mut payees = Vec::new();
     let mut tags = Vec::new();
     completions.iter().for_each(|c| match c {
         LedgerCompletion::Account(account) => accounts.push(account),
+        LedgerCompletion::Directive(directive) => directives.push(directive),
         LedgerCompletion::File(filename) => files.push(filename),
         LedgerCompletion::Payee(payee) => payees.push(payee),
         LedgerCompletion::Tag(tag) => tags.push(tag),
     });
     println!("[{kind}] {} accounts", accounts.len());
+    println!("[{kind}] {} directives", directives.len());
     println!("[{kind}] {} files", files.len());
     println!("[{kind}] {} payees", payees.len());
     println!("[{kind}] {} tags", tags.len());
 
     if print_completions {
         dbg!(accounts);
+        dbg!(directives);
         dbg!(files);
         dbg!(payees);
         dbg!(tags);
@@ -761,6 +797,27 @@ fn test_completions() {
         Account(
             "Three & Four",
         ),
+        Directive(
+            "account",
+        ),
+        Directive(
+            "alias",
+        ),
+        Directive(
+            "commodity",
+        ),
+        Directive(
+            "include",
+        ),
+        Directive(
+            "payee",
+        ),
+        Directive(
+            "tag",
+        ),
+        Directive(
+            "year",
+        ),
         Payee(
             "Mom & Dad",
         ),
@@ -802,6 +859,27 @@ fn test_completions_tags() {
         Account(
             "Account2",
         ),
+        Directive(
+            "account",
+        ),
+        Directive(
+            "alias",
+        ),
+        Directive(
+            "commodity",
+        ),
+        Directive(
+            "include",
+        ),
+        Directive(
+            "payee",
+        ),
+        Directive(
+            "tag",
+        ),
+        Directive(
+            "year",
+        ),
         Payee(
             "Payee1",
         ),
@@ -833,6 +911,27 @@ fn test_completions_files() {
     insta::assert_debug_snapshot!(completions,
     @r#"
     [
+        Directive(
+            "account",
+        ),
+        Directive(
+            "alias",
+        ),
+        Directive(
+            "commodity",
+        ),
+        Directive(
+            "include",
+        ),
+        Directive(
+            "payee",
+        ),
+        Directive(
+            "tag",
+        ),
+        Directive(
+            "year",
+        ),
         File(
             "baz/qux.ledger",
         ),
@@ -872,6 +971,27 @@ fn test_completions_from_included_files() {
         ),
         Account(
             "Account2",
+        ),
+        Directive(
+            "account",
+        ),
+        Directive(
+            "alias",
+        ),
+        Directive(
+            "commodity",
+        ),
+        Directive(
+            "include",
+        ),
+        Directive(
+            "payee",
+        ),
+        Directive(
+            "tag",
+        ),
+        Directive(
+            "year",
         ),
         Payee(
             "Payee1",
