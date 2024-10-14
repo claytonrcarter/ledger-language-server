@@ -495,42 +495,62 @@ impl LanguageServer for Lsp {
             None => return Ok(None),
         };
 
-        let (include_payees, include_files, include_accounts, include_tags) = {
+        #[derive(Default)]
+        struct CompletionsToInclude {
+            payees: bool,
+            files: bool,
+            accounts: bool,
+            tags: bool,
+        }
+
+        let include = {
             let line = params.text_document_position.position.line as usize;
             let line = contents.split('\n').nth(line).unwrap_or("");
 
             match (line.chars().nth(0), line.trim().chars().nth(0)) {
                 // posting comment/note
                 (Some(char1), Some(';' | '#' | '%' | '|' | '*')) if char1.is_whitespace() => {
-                    (false, false, false, true)
+                    CompletionsToInclude {
+                        tags: true,
+                        ..CompletionsToInclude::default()
+                    }
                 }
 
                 // posting account
-                (Some(char1), _) if char1.is_whitespace() => (false, false, true, false),
+                (Some(char1), _) if char1.is_whitespace() => CompletionsToInclude {
+                    accounts: true,
+                    ..CompletionsToInclude::default()
+                },
 
                 // transaction date
-                (Some(char1), _) if char1.is_numeric() => (true, false, false, false),
+                (Some(char1), _) if char1.is_numeric() => CompletionsToInclude {
+                    payees: true,
+                    ..CompletionsToInclude::default()
+                },
 
                 // include directive
-                (Some('i'), _) if line.starts_with("include") => (false, true, false, false),
+                (Some('i'), _) if line.starts_with("include") => CompletionsToInclude {
+                    files: true,
+                    ..CompletionsToInclude::default()
+                },
 
-                (_, _) => (false, false, false, false),
+                (_, _) => CompletionsToInclude::default(),
             }
         };
 
         let completions = completions
             .into_iter()
             .filter_map(|i| match i {
-                LedgerCompletion::Account(account) if include_accounts => Some(
+                LedgerCompletion::Account(account) if include.accounts => Some(
                     CompletionItem::new_simple(account.clone(), "Account".to_string()),
                 ),
-                LedgerCompletion::File(filename) if include_files => Some(
+                LedgerCompletion::File(filename) if include.files => Some(
                     CompletionItem::new_simple(filename.clone(), "File".to_string()),
                 ),
-                LedgerCompletion::Payee(payee) if include_payees => Some(
+                LedgerCompletion::Payee(payee) if include.payees => Some(
                     CompletionItem::new_simple(payee.clone(), "Payee".to_string()),
                 ),
-                LedgerCompletion::Tag(tag) if include_tags => {
+                LedgerCompletion::Tag(tag) if include.tags => {
                     Some(CompletionItem::new_simple(tag.clone(), "Tag".to_string()))
                 }
                 LedgerCompletion::Account(_)
