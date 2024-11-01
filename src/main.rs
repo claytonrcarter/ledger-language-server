@@ -52,6 +52,7 @@ enum LedgerCompletion {
     Directive(String),
     File(String),
     Payee(String),
+    Period(String),
     Tag(String),
 }
 
@@ -90,6 +91,7 @@ impl LedgerBackend {
         // not a recursive call to included files
         if visited.is_empty() {
             self.completions_insert_directives(&mut completions);
+            self.completions_insert_periods(&mut completions);
 
             // only crawl files once, from the dir containing the buffer
             let project_files = self._test_project_files.clone().unwrap_or_else(|| {
@@ -220,6 +222,29 @@ impl LedgerBackend {
         .into_iter()
         .for_each(|s| {
             completions.insert(LedgerCompletion::Directive(s.to_string()));
+        });
+    }
+
+    fn completions_insert_periods(&self, completions: &mut HashSet<LedgerCompletion>) {
+        // only worrying about the most common for now
+        // https://ledger-cli.org/doc/ledger3.html#Command-Directives
+        vec![
+            "Every Day",
+            "Every Week",
+            "Every Month",
+            "Every Quarter",
+            "Every Year",
+            "Daily",
+            "Weekly",
+            "Biweekly",
+            "Monthly",
+            "Bimonthly",
+            "Quarterly",
+            "Yearly",
+        ]
+        .into_iter()
+        .for_each(|s| {
+            completions.insert(LedgerCompletion::Period(s.to_string()));
         });
     }
 
@@ -524,6 +549,7 @@ impl LanguageServer for Lsp {
             directives: bool,
             files: bool,
             payees: bool,
+            periods: bool,
             tags: bool,
         }
 
@@ -550,6 +576,12 @@ impl LanguageServer for Lsp {
                 // transaction date
                 (Some(char1), _) if char1.is_numeric() => CompletionsToInclude {
                     payees: true,
+                    ..CompletionsToInclude::default()
+                },
+
+                // periodic transaction
+                (Some(char1), _) if char1 == '~' => CompletionsToInclude {
+                    periods: true,
                     ..CompletionsToInclude::default()
                 },
 
@@ -581,6 +613,9 @@ impl LanguageServer for Lsp {
                 LedgerCompletion::Payee(payee) if include.payees => Some(
                     CompletionItem::new_simple(payee.clone(), "Payee".to_string()),
                 ),
+                LedgerCompletion::Period(period) if include.periods => Some(
+                    CompletionItem::new_simple(period.clone(), "Period".to_string()),
+                ),
                 LedgerCompletion::Tag(tag) if include.tags => {
                     Some(CompletionItem::new_simple(tag.clone(), "Tag".to_string()))
                 }
@@ -588,6 +623,7 @@ impl LanguageServer for Lsp {
                 | LedgerCompletion::Directive(_)
                 | LedgerCompletion::File(_)
                 | LedgerCompletion::Payee(_)
+                | LedgerCompletion::Period(_)
                 | LedgerCompletion::Tag(_) => None,
             })
             .collect();
@@ -709,18 +745,21 @@ fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>, print_completions:
     let mut directives = Vec::new();
     let mut files = Vec::new();
     let mut payees = Vec::new();
+    let mut periods = Vec::new();
     let mut tags = Vec::new();
     completions.iter().for_each(|c| match c {
         LedgerCompletion::Account(account) => accounts.push(account),
         LedgerCompletion::Directive(directive) => directives.push(directive),
         LedgerCompletion::File(filename) => files.push(filename),
         LedgerCompletion::Payee(payee) => payees.push(payee),
+        LedgerCompletion::Period(period) => periods.push(period),
         LedgerCompletion::Tag(tag) => tags.push(tag),
     });
     println!("[{kind}] {} accounts", accounts.len());
     println!("[{kind}] {} directives", directives.len());
     println!("[{kind}] {} files", files.len());
     println!("[{kind}] {} payees", payees.len());
+    println!("[{kind}] {} periods", periods.len());
     println!("[{kind}] {} tags", tags.len());
 
     if print_completions {
@@ -728,6 +767,7 @@ fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>, print_completions:
         dbg!(directives);
         dbg!(files);
         dbg!(payees);
+        dbg!(periods);
         dbg!(tags);
     }
 }
@@ -827,6 +867,42 @@ fn test_completions() {
         Payee(
             "Payee2",
         ),
+        Period(
+            "Bimonthly",
+        ),
+        Period(
+            "Biweekly",
+        ),
+        Period(
+            "Daily",
+        ),
+        Period(
+            "Every Day",
+        ),
+        Period(
+            "Every Month",
+        ),
+        Period(
+            "Every Quarter",
+        ),
+        Period(
+            "Every Week",
+        ),
+        Period(
+            "Every Year",
+        ),
+        Period(
+            "Monthly",
+        ),
+        Period(
+            "Quarterly",
+        ),
+        Period(
+            "Weekly",
+        ),
+        Period(
+            "Yearly",
+        ),
     ]
     "#
     );
@@ -883,6 +959,42 @@ fn test_completions_tags() {
         Payee(
             "Payee1",
         ),
+        Period(
+            "Bimonthly",
+        ),
+        Period(
+            "Biweekly",
+        ),
+        Period(
+            "Daily",
+        ),
+        Period(
+            "Every Day",
+        ),
+        Period(
+            "Every Month",
+        ),
+        Period(
+            "Every Quarter",
+        ),
+        Period(
+            "Every Week",
+        ),
+        Period(
+            "Every Year",
+        ),
+        Period(
+            "Monthly",
+        ),
+        Period(
+            "Quarterly",
+        ),
+        Period(
+            "Weekly",
+        ),
+        Period(
+            "Yearly",
+        ),
         Tag(
             "Tag1",
         ),
@@ -937,6 +1049,42 @@ fn test_completions_files() {
         ),
         File(
             "foo.ledger",
+        ),
+        Period(
+            "Bimonthly",
+        ),
+        Period(
+            "Biweekly",
+        ),
+        Period(
+            "Daily",
+        ),
+        Period(
+            "Every Day",
+        ),
+        Period(
+            "Every Month",
+        ),
+        Period(
+            "Every Quarter",
+        ),
+        Period(
+            "Every Week",
+        ),
+        Period(
+            "Every Year",
+        ),
+        Period(
+            "Monthly",
+        ),
+        Period(
+            "Quarterly",
+        ),
+        Period(
+            "Weekly",
+        ),
+        Period(
+            "Yearly",
         ),
     ]
     "#
@@ -995,6 +1143,42 @@ fn test_completions_from_included_files() {
         ),
         Payee(
             "Payee1",
+        ),
+        Period(
+            "Bimonthly",
+        ),
+        Period(
+            "Biweekly",
+        ),
+        Period(
+            "Daily",
+        ),
+        Period(
+            "Every Day",
+        ),
+        Period(
+            "Every Month",
+        ),
+        Period(
+            "Every Quarter",
+        ),
+        Period(
+            "Every Week",
+        ),
+        Period(
+            "Every Year",
+        ),
+        Period(
+            "Monthly",
+        ),
+        Period(
+            "Quarterly",
+        ),
+        Period(
+            "Weekly",
+        ),
+        Period(
+            "Yearly",
         ),
     ]
     "#
