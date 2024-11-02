@@ -9,10 +9,6 @@ use tower_lsp::{Client, LanguageServer};
 use tower_lsp::{LspService, Server};
 
 pub async fn run_server() {
-    // simple_logging::log_to_file("ledger-lsp.log", log::LevelFilter::max())
-    //     .expect("Could not init logging");
-    log::info!("[main] ledger-lsp starting");
-
     let (stdin, stdout) = (tokio::io::stdin(), tokio::io::stdout());
     let (service, socket) = LspService::new(|client| Lsp {
         client,
@@ -39,10 +35,27 @@ pub struct Lsp {
     pub backend: LedgerBackend,
 }
 
+macro_rules! log {
+    // log!(self, LEVEL, "format {args} and {}", such)
+    // where level is LOG, INFO, WARNING, ERROR
+    ($self:ident, $lvl:ident, $($arg:tt)+) => ({
+        $self.client
+            .log_message(MessageType::$lvl, format!($($arg)+))
+            .await;
+    });
+
+    // log!(self, "format {args} and {}", such)
+    ($self:ident, $($arg:tt)+) => ({
+        $self.client
+            .log_message(MessageType::LOG, format!($($arg)+))
+            .await;
+    });
+}
+
 #[tower_lsp::async_trait]
 impl LanguageServer for Lsp {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        log::info!("[initialize] {params:?}");
+        log!(self, "[initialize] {params:#?}");
 
         Ok(InitializeResult {
             server_info: None,
@@ -79,44 +92,28 @@ impl LanguageServer for Lsp {
     }
 
     async fn initialized(&self, params: InitializedParams) {
-        log::info!("[initialized] {params:?}");
-
-        self.client
-            .log_message(MessageType::INFO, "initialized!")
-            .await;
+        log!(self, "[initialized] {params:?}");
     }
 
     async fn shutdown(&self) -> Result<()> {
-        log::info!("[shutdown]");
+        log!(self, "[shutdown]");
         Ok(())
     }
 
-    async fn did_change_workspace_folders(&self, _: DidChangeWorkspaceFoldersParams) {
-        log::info!("[did_change_workspace_folders]");
-        self.client
-            .log_message(MessageType::INFO, "workspace folders changed!")
-            .await;
+    async fn did_change_workspace_folders(&self, params: DidChangeWorkspaceFoldersParams) {
+        log!(self, "[did_change_workspace_folders] {params:?}");
     }
 
-    async fn did_change_configuration(&self, _: DidChangeConfigurationParams) {
-        log::info!("[did_change_configuration]");
-        self.client
-            .log_message(MessageType::INFO, "configuration changed!")
-            .await;
+    async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
+        log!(self, "[did_change_configuration] {params:?}");
     }
 
-    async fn did_change_watched_files(&self, _: DidChangeWatchedFilesParams) {
-        log::info!("[did_change_watched_files]");
-        self.client
-            .log_message(MessageType::INFO, "watched files have changed!")
-            .await;
+    async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
+        log!(self, "[did_change_watched_files] {params:?}");
     }
 
-    async fn execute_command(&self, _: ExecuteCommandParams) -> Result<Option<Value>> {
-        log::info!("[execute_command]");
-        self.client
-            .log_message(MessageType::INFO, "command executed!")
-            .await;
+    async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<Value>> {
+        log!(self, "[execute_command] {params:?}");
 
         match self.client.apply_edit(WorkspaceEdit::default()).await {
             Ok(res) if res.applied => self.client.log_message(MessageType::INFO, "applied").await,
@@ -128,10 +125,7 @@ impl LanguageServer for Lsp {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        log::info!("[did_open] {params:?}");
-        self.client
-            .log_message(MessageType::INFO, "file opened!")
-            .await;
+        log!(self, "[did_open] {params:?}");
 
         // on open, cache the file contents, generate initial completions, and
         // run dianostics
@@ -142,14 +136,19 @@ impl LanguageServer for Lsp {
         );
         let mut visited = HashSet::new();
 
-        state.completions.insert(
-            params.text_document.uri.path().to_owned(),
-            self.backend.completions(
-                params.text_document.uri.path(),
-                &params.text_document.text,
-                &mut visited,
-            ),
-        );
+        match self.backend.completions(
+            params.text_document.uri.path(),
+            &params.text_document.text,
+            &mut visited,
+        ) {
+            Ok(completions) => state
+                .completions
+                .insert(params.text_document.uri.path().to_owned(), completions),
+            Err(err) => {
+                log!(self, ERROR, "{err}");
+                None
+            }
+        };
 
         self.client
             .publish_diagnostics(
@@ -164,10 +163,7 @@ impl LanguageServer for Lsp {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        log::info!("[did_change] {params:?}");
-        self.client
-            .log_message(MessageType::INFO, "file changed!")
-            .await;
+        log!(self, "[did_change] {params:?}");
 
         // on update, only cache the file contents and don't touch the
         // completions or diagnostics (because the buffer may be
@@ -183,10 +179,7 @@ impl LanguageServer for Lsp {
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        log::info!("[did_save] {params:?}");
-        self.client
-            .log_message(MessageType::INFO, "file saved!")
-            .await;
+        log!(self, "[did_save] {params:?}");
 
         // on save, regenerate the completions and diagnostics, but don't cache
         // the file contents (params don't have access to updated buffer contents)
@@ -195,11 +188,18 @@ impl LanguageServer for Lsp {
         let mut state = self.state.lock().await;
         if let Some(content) = state.sources.get(params.text_document.uri.path()).cloned() {
             let mut visited = HashSet::new();
-            state.completions.insert(
-                params.text_document.uri.path().to_owned(),
-                self.backend
-                    .completions(params.text_document.uri.path(), &content, &mut visited),
-            );
+            match self
+                .backend
+                .completions(params.text_document.uri.path(), &content, &mut visited)
+            {
+                Ok(completions) => state
+                    .completions
+                    .insert(params.text_document.uri.path().to_owned(), completions),
+                Err(err) => {
+                    log!(self, ERROR, "{err}");
+                    None
+                }
+            };
 
             self.client
                 .publish_diagnostics(
@@ -211,16 +211,12 @@ impl LanguageServer for Lsp {
         }
     }
 
-    async fn did_close(&self, _: DidCloseTextDocumentParams) {
-        log::info!("[did_close]");
-
-        self.client
-            .log_message(MessageType::INFO, "file closed!")
-            .await;
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        log!(self, "[did_close] {params:?}");
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        log::info!("[completion] {params:?}");
+        log!(self, "[completion] {params:?}");
 
         // let contents = contents_of_path(params.text_document_position.text_document.uri.path());
         let state = self.state.lock().await;
@@ -328,7 +324,7 @@ impl LanguageServer for Lsp {
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        log::info!("[formatting] {params:?}");
+        log!(self, "[formatting] {params:?}");
 
         let state = self.state.lock().await;
         let source = match state.sources.get(params.text_document.uri.path()) {
@@ -336,7 +332,13 @@ impl LanguageServer for Lsp {
             None => return Ok(None),
         };
 
-        let formatted = LedgerBackend::format(&source);
+        let formatted = match LedgerBackend::format(&source) {
+            Ok(formatted) => formatted,
+            Err(err) => {
+                log!(self, ERROR, "{err}");
+                source.clone()
+            }
+        };
 
         Ok(Some(vec![TextEdit {
             range: Range {
@@ -351,7 +353,7 @@ impl LanguageServer for Lsp {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        log::info!("[goto_definition] {params:?}");
+        log!(self, "[goto_definition] {params:?}");
 
         let state = self.state.lock().await;
         let buffer_path = params
@@ -396,7 +398,11 @@ impl LanguageServer for Lsp {
                 let dir = match Path::new(buffer_path).parent() {
                     Some(dir) => dir,
                     None => {
-                        log::error!("[goto_definition] Buffer has no parent dir? {buffer_path}");
+                        log!(
+                            self,
+                            ERROR,
+                            "[goto_definition] Buffer has no parent dir? {buffer_path}"
+                        );
                         return Ok(None);
                     }
                 };
@@ -404,11 +410,13 @@ impl LanguageServer for Lsp {
                 match path.canonicalize() {
                     Ok(path) => path,
                     Err(err) => {
-                        log::error!(
+                        log!(
+                            self,
+                            ERROR,
                             "[goto_definition] Counld not canonicalize {}",
                             path.to_string_lossy()
                         );
-                        log::error!("[goto_definition] {err}");
+                        log!(self, ERROR, "[goto_definition] {err}");
                         return Ok(None);
                     }
                 }
@@ -417,7 +425,9 @@ impl LanguageServer for Lsp {
             match Url::from_file_path(&path) {
                 Ok(url) => url,
                 Err(()) => {
-                    log::error!(
+                    log!(
+                        self,
+                        ERROR,
                         "[goto_definition] Unable to build url for {}",
                         path.to_string_lossy()
                     );

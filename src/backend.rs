@@ -36,15 +36,16 @@ impl LedgerBackend {
         buffer_path: &str,
         content: &str,
         visited: &mut HashSet<String>,
-    ) -> Vec<LedgerCompletion> {
+    ) -> Result<Vec<LedgerCompletion>, String> {
         let mut completions = HashSet::new();
 
         let current_dir = match Path::new(buffer_path).parent() {
             Some(dir) => dir,
             None => {
-                log::error!("[diagnostics] Buffer has no parent dir? {buffer_path}");
                 // TODO ??
-                return Vec::new();
+                return Err(format!(
+                    "[diagnostics] Buffer has no parent dir? {buffer_path}"
+                ));
             }
         };
 
@@ -152,12 +153,15 @@ impl LedgerBackend {
                     visited.insert(filename.to_string());
                 }
 
-                let included_content = self
-                    ._test_included_content
-                    .as_ref()
-                    .map_or_else(|| contents_of_path(filename), |content| content.to_string());
+                let included_content = self._test_included_content.as_ref().map_or_else(
+                    || contents_of_path(filename),
+                    |content| Ok(content.to_string()),
+                )?;
 
                 self.completions(filename, &included_content, visited)
+                    // ignore errors for included files; surface those via
+                    // diagnostics instead
+                    .unwrap_or_default()
                     .into_iter()
                     .for_each(|c| {
                         completions.insert(c);
@@ -165,7 +169,7 @@ impl LedgerBackend {
             }
         }
 
-        completions.into_iter().collect()
+        Ok(completions.into_iter().collect())
     }
 
     fn completions_insert_directives(&self, completions: &mut HashSet<LedgerCompletion>) {
@@ -244,14 +248,8 @@ impl LedgerBackend {
                 let path = if path.is_absolute() {
                     path.to_path_buf()
                 } else {
-                    let dir = match Path::new(buffer_path).parent() {
-                        Some(dir) => dir,
-                        None => {
-                            log::error!("[diagnostics] Buffer has no parent dir? {buffer_path}");
-                            // TODO ??
-                            return None;
-                        }
-                    };
+                    // FIXME what is parent() is None?
+                    let dir = Path::new(buffer_path).parent()?;
                     dir.join(path)
                 };
 
@@ -264,7 +262,7 @@ impl LedgerBackend {
             .collect()
     }
 
-    pub fn format(content: &str) -> String {
+    pub fn format(content: &str) -> Result<String, String> {
         match ledger_parser::parse(content) {
             Ok(ledger) => {
                 let mut buf = Vec::new();
@@ -279,13 +277,9 @@ impl LedgerBackend {
                 settings.condense_empty_lines = true;
                 settings.insert_empty_lines = true;
                 ledger.write(&mut buf, &settings).expect("TODO");
-                String::from_utf8(buf).expect("TODO")
+                Ok(String::from_utf8(buf).expect("TODO"))
             }
-            Err(err) => {
-                log::error!("[format] Unable to parse ledger");
-                log::error!("[format] {err}");
-                content.to_owned()
-            }
+            Err(err) => Err(format!("[format] Unable to parse ledger: {err}")),
         }
     }
 }
@@ -312,7 +306,9 @@ fn test_completions() {
     ",
     );
     let mut visited = HashSet::new();
-    let mut completions = be.completions("unused in test", &source, &mut visited);
+    let mut completions = be
+        .completions("unused in test", &source, &mut visited)
+        .unwrap();
     completions.sort();
     insta::assert_debug_snapshot!(completions,
     @r#"
@@ -419,7 +415,9 @@ fn test_completions_tags() {
     ",
     );
     let mut visited = HashSet::new();
-    let mut completions = be.completions("unused in test", &source, &mut visited);
+    let mut completions = be
+        .completions("unused in test", &source, &mut visited)
+        .unwrap();
     completions.sort();
     insta::assert_debug_snapshot!(completions,
     @r#"
@@ -513,7 +511,7 @@ fn test_completions_files() {
         ),
     };
     let mut visited = HashSet::new();
-    let mut completions = be.completions("unused in test", "", &mut visited);
+    let mut completions = be.completions("unused in test", "", &mut visited).unwrap();
     completions.sort();
     insta::assert_debug_snapshot!(completions,
     @r#"
@@ -603,7 +601,9 @@ fn test_completions_from_included_files() {
     };
     let mut visited = HashSet::new();
 
-    let mut completions = be.completions("unused in test", &source, &mut visited);
+    let mut completions = be
+        .completions("unused in test", &source, &mut visited)
+        .unwrap();
 
     completions.sort();
     insta::assert_debug_snapshot!(completions,
@@ -691,7 +691,7 @@ fn test_formatting() {
     ",
     );
 
-    insta::assert_snapshot!(LedgerBackend::format(&source),
+    insta::assert_snapshot!(LedgerBackend::format(&source).unwrap(),
     @r"
     2023/09/28 (743) Check Withdrawal
         ; Memo: CHK#743

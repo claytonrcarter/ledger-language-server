@@ -11,14 +11,14 @@ mod lsp;
 async fn main() {
     match (env::args().nth(1), env::args().nth(2)) {
         (Some(arg), Some(file)) if arg == "--debug" => {
-            let source = contents_of_path(&file);
+            let source = contents_of_path(&file).unwrap();
             let print_completions = true;
 
             let be = LedgerBackend::new();
             let mut visited = HashSet::new();
             dump_debug(
                 "tree-sitter",
-                be.completions(&file, &source, &mut visited),
+                be.completions(&file, &source, &mut visited).unwrap(),
                 print_completions,
             );
 
@@ -65,23 +65,12 @@ fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>, print_completions:
 
 /// path must be canonicalize-able; either canonical on it's own, or valid
 /// relative to cwd
-pub fn contents_of_path(path: &str) -> String {
-    let p = Path::new(path);
+pub fn contents_of_path(path: &str) -> Result<String, String> {
+    let p = Path::new(path)
+        .canonicalize()
+        .map_err(|err| format!("[contents_of_path] {err}"))?;
 
-    let p = match p.canonicalize() {
-        Ok(p) => p,
-        Err(err) => {
-            log::error!("[completions_for_path] {err}");
-            return String::new();
-        }
-    };
-
-    match fs::read_to_string(p) {
-        Ok(contents) => contents,
-        Err(err) => {
-            log::error!("[completions_for_path] Unable to open file '{path}'");
-            log::error!("[completions_for_path] {err}");
-            return String::new();
-        }
-    }
+    fs::read_to_string(p).map_err(|err| {
+        format!("[contents_of_path] Unable to open file '{path}'\n[contents_of_path] {err}")
+    })
 }
