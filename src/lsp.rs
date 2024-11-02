@@ -35,6 +35,27 @@ pub struct Lsp {
     pub backend: LedgerBackend,
 }
 
+impl Lsp {
+    fn completion_with_edit(
+        &self,
+        mut completion: CompletionItem,
+        contents: &str,
+        candidate: &LedgerCompletion,
+        position: &Position,
+    ) -> Option<CompletionItem> {
+        if let Some(range) = self
+            .backend
+            .node_range_at_position(contents, candidate, position)
+        {
+            completion.text_edit = Some(CompletionTextEdit::Edit(TextEdit {
+                range,
+                new_text: completion.label.clone(),
+            }));
+        };
+        Some(completion)
+    }
+}
+
 macro_rules! log {
     // log!(self, LEVEL, "format {args} and {}", such)
     // where level is LOG, INFO, WARNING, ERROR
@@ -56,6 +77,10 @@ macro_rules! log {
 impl LanguageServer for Lsp {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         log!(self, "[initialize] {params:#?}");
+
+        // let _opts = params.initialization_options;
+        // formatting
+        // sorting
 
         Ok(InitializeResult {
             server_info: None,
@@ -231,7 +256,7 @@ impl LanguageServer for Lsp {
             .completions
             .get(params.text_document_position.text_document.uri.path())
         {
-            Some(contents) => contents,
+            Some(completions) => completions,
             None => return Ok(None),
         };
 
@@ -290,20 +315,29 @@ impl LanguageServer for Lsp {
             }
         };
 
+        // zed seems to do the right thing w/ most completions because they
+        // mostly contain "normal" code chars, but payees and accounts have
         let completions = completions
             .into_iter()
             .filter_map(|i| match i {
-                LedgerCompletion::Account(account) if include.accounts => Some(
-                    CompletionItem::new_simple(account.clone(), "Account".to_string()),
-                ),
+                LedgerCompletion::Account(account) if include.accounts => self
+                    .completion_with_edit(
+                        CompletionItem::new_simple(account.clone(), "Account".to_string()),
+                        contents,
+                        i,
+                        &params.text_document_position.position,
+                    ),
                 LedgerCompletion::Directive(directive) if include.directives => Some(
                     CompletionItem::new_simple(directive.clone(), "Directive".to_string()),
                 ),
                 LedgerCompletion::File(filename) if include.files => Some(
                     CompletionItem::new_simple(filename.clone(), "File".to_string()),
                 ),
-                LedgerCompletion::Payee(payee) if include.payees => Some(
+                LedgerCompletion::Payee(payee) if include.payees => self.completion_with_edit(
                     CompletionItem::new_simple(payee.clone(), "Payee".to_string()),
+                    contents,
+                    i,
+                    &params.text_document_position.position,
                 ),
                 LedgerCompletion::Period(period) if include.periods => Some(
                     CompletionItem::new_simple(period.clone(), "Period".to_string()),

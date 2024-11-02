@@ -2,7 +2,7 @@ use ledger_parser::{Serializer, SerializerSettings};
 use std::collections::HashSet;
 use std::path::Path;
 use tower_lsp::lsp_types::*;
-use tree_sitter::Parser;
+use tree_sitter::{Parser, Point};
 use walkdir::WalkDir;
 
 use crate::contents_of_path;
@@ -281,6 +281,58 @@ impl LedgerBackend {
             }
             Err(err) => Err(format!("[format] Unable to parse ledger: {err}")),
         }
+    }
+
+    pub fn node_range_at_position(
+        &self,
+        content: &str,
+        kind: &LedgerCompletion,
+        position: &Position,
+    ) -> Option<Range> {
+        let mut parser = Parser::new();
+        parser
+            .set_language(tree_sitter_ledger::language())
+            .expect("loading Ledger tree-sitter grammar");
+        let tree = parser.parse(content, None).unwrap();
+        let mut cursor = tree.walk();
+
+        // descend to smallest node @ point
+        while cursor
+            .goto_first_child_for_point(Point {
+                row: position.line as usize,
+                column: position.character as usize,
+            })
+            .is_some()
+        {}
+
+        // ascend to first named node
+        while !cursor.node().is_named() {
+            cursor.goto_parent();
+        }
+
+        let node_kind = cursor.node().kind();
+        match kind {
+            LedgerCompletion::Account(_) if node_kind == "account" => {}
+            LedgerCompletion::Payee(_) if node_kind == "payee" => {}
+            LedgerCompletion::Account(_)
+            | LedgerCompletion::Payee(_)
+            | LedgerCompletion::Directive(_)
+            | LedgerCompletion::File(_)
+            | LedgerCompletion::Period(_)
+            | LedgerCompletion::Tag(_) => return None,
+        }
+
+        let range = cursor.node().range();
+        Some(Range {
+            start: Position {
+                line: range.start_point.row as u32,
+                character: range.start_point.column as u32,
+            },
+            end: Position {
+                line: range.end_point.row as u32,
+                character: range.end_point.column as u32,
+            },
+        })
     }
 }
 
@@ -699,6 +751,110 @@ fn test_formatting() {
         SVFCU:Personal                           $-16.00
         Expenses:Uncategorized
 
+    ",
+    );
+}
+
+#[test]
+fn test_account_range() {
+    let source = textwrap::dedent(
+        "
+        2023/09/28 Foo
+            Bar   $-160.00
+            Qux:Fiz
+    ",
+    );
+
+    // end of Bar
+    let range = LedgerBackend::new().node_range_at_position(
+        &source,
+        &LedgerCompletion::Account(String::new()),
+        &Position {
+            line: 2,
+            character: 7,
+        },
+    );
+    insta::assert_debug_snapshot!(range,
+    @r"
+    Some(
+        Range {
+            start: Position {
+                line: 2,
+                character: 4,
+            },
+            end: Position {
+                line: 2,
+                character: 7,
+            },
+        },
+    )
+    ",
+    );
+
+    // end of Qux
+    let range = LedgerBackend::new().node_range_at_position(
+        &source,
+        &LedgerCompletion::Account(String::new()),
+        &Position {
+            line: 3,
+            character: 7,
+        },
+    );
+    insta::assert_debug_snapshot!(range,
+    @r"
+    Some(
+        Range {
+            start: Position {
+                line: 3,
+                character: 4,
+            },
+            end: Position {
+                line: 3,
+                character: 11,
+            },
+        },
+    )
+    ",
+    );
+
+    // middle of Foo (payee, not account)
+    let range = LedgerBackend::new().node_range_at_position(
+        &source,
+        &LedgerCompletion::Account(String::new()),
+        &Position {
+            line: 1,
+            character: 12,
+        },
+    );
+    insta::assert_debug_snapshot!(range,
+    @r"
+    None
+    ",
+    );
+
+    // middle of Foo (payee)
+    let range = LedgerBackend::new().node_range_at_position(
+        &source,
+        &LedgerCompletion::Payee(String::new()),
+        &Position {
+            line: 1,
+            character: 12,
+        },
+    );
+    insta::assert_debug_snapshot!(range,
+    @r"
+    Some(
+        Range {
+            start: Position {
+                line: 1,
+                character: 11,
+            },
+            end: Position {
+                line: 1,
+                character: 14,
+            },
+        },
+    )
     ",
     );
 }
