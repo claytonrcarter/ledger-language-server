@@ -13,29 +13,28 @@ pub async fn run_server() {
     let (service, socket) = LspService::new(|client| Lsp {
         client,
         state: Mutex::new(LspState {
+            backend: LedgerBackend::new(),
             sources: HashMap::new(),
             completions: HashMap::new(),
         }),
-        backend: LedgerBackend::new(),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
 
-#[derive(Debug)]
 pub struct LspState {
+    pub backend: LedgerBackend,
+
     // see https://github.com/ebkalderon/nix-language-server/blob/master/src/backend.rs#L14-L23
     pub sources: HashMap<String, String>,
     pub completions: HashMap<String, Vec<LedgerCompletion>>,
 }
 
-#[derive(Debug)]
 pub struct Lsp {
     pub client: Client,
     pub state: Mutex<LspState>,
-    pub backend: LedgerBackend,
 }
 
-impl Lsp {
+impl LspState {
     fn completion_with_edit(
         &self,
         mut completion: CompletionItem,
@@ -150,7 +149,11 @@ impl LanguageServer for Lsp {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        log!(self, "[did_open] {params:?}");
+        {
+            let mut p = params.clone();
+            p.text_document.text = "...trimmed...".to_string();
+            log!(self, "[did_open] {p:?}");
+        }
 
         // on open, cache the file contents, generate initial completions, and
         // run dianostics
@@ -159,9 +162,13 @@ impl LanguageServer for Lsp {
             params.text_document.uri.path().to_owned(),
             params.text_document.text.clone(),
         );
+        state.backend.parse_document(&params.text_document.text);
+
         let mut visited = HashSet::new();
 
-        match self.backend.completions(
+        state.backend.parse_document(&params.text_document.text);
+
+        match state.backend.completions(
             params.text_document.uri.path(),
             &params.text_document.text,
             &mut visited,
@@ -188,23 +195,39 @@ impl LanguageServer for Lsp {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        log!(self, "[did_change] {params:?}");
+        {
+            let mut p = params.clone();
+            p.content_changes = p
+                .content_changes
+                .into_iter()
+                .map(|mut c| {
+                    c.text = "...trimmed...".to_string();
+                    c
+                })
+                .collect();
+            log!(self, "[did_change] {p:?}");
+        }
 
         // on update, only cache the file contents and don't touch the
         // completions or diagnostics (because the buffer may be
         // dirty/incomplete/incorrect)
         let mut state = self.state.lock().await;
-        state.sources.insert(
-            params.text_document.uri.path().to_owned(),
-            match params.content_changes.get(0) {
-                Some(content) => content.text.clone(),
-                None => String::new(),
-            },
-        );
+        let content = match params.content_changes.get(0) {
+            Some(content) => content.text.clone(),
+            None => String::new(),
+        };
+        state
+            .sources
+            .insert(params.text_document.uri.path().to_owned(), content.clone());
+        state.backend.parse_document(&content);
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
-        log!(self, "[did_save] {params:?}");
+        {
+            let mut p = params.clone();
+            p.text = Some("...trimmed...".to_string());
+            log!(self, "[did_save] {p:?}");
+        }
 
         // on save, regenerate the completions and diagnostics, but don't cache
         // the file contents (params don't have access to updated buffer contents)
@@ -213,7 +236,7 @@ impl LanguageServer for Lsp {
         let mut state = self.state.lock().await;
         if let Some(content) = state.sources.get(params.text_document.uri.path()).cloned() {
             let mut visited = HashSet::new();
-            match self
+            match state
                 .backend
                 .completions(params.text_document.uri.path(), &content, &mut visited)
             {
@@ -242,14 +265,18 @@ impl LanguageServer for Lsp {
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         log!(self, "[completion] {params:?}");
+        let start_time = std::time::Instant::now();
 
         // let contents = contents_of_path(params.text_document_position.text_document.uri.path());
         let state = self.state.lock().await;
-        let contents = match state
-            .sources
-            .get(params.text_document_position.text_document.uri.path())
-        {
-            Some(contents) => contents,
+        log!(
+            self,
+            "[completion] acquired lock @ {:?}",
+            start_time.elapsed()
+        );
+        let pathname = params.text_document_position.text_document.uri.path();
+        let contents = match state.sources.get(pathname) {
+            Some(contents) => contents.clone(),
             None => return Ok(None),
         };
         let completions = match state
@@ -314,17 +341,27 @@ impl LanguageServer for Lsp {
                 },
             }
         };
+        log!(
+            self,
+            "[completion] found location @ {:?}",
+            start_time.elapsed()
+        );
 
+        log!(
+            self,
+            "[completion] filtering {} completions",
+            completions.len()
+        );
         // zed seems to do the right thing w/ most completions because they
         // mostly contain "normal" code chars, but payees and accounts have
-        let completions = completions
-            .into_iter()
+        let completions: Vec<CompletionItem> = completions
+            .iter()
             .filter_map(|i| match i {
-                LedgerCompletion::Account(account) if include.accounts => self
+                LedgerCompletion::Account(account) if include.accounts => state
                     .completion_with_edit(
                         CompletionItem::new_simple(account.clone(), "Account".to_string()),
-                        contents,
-                        i,
+                        &contents,
+                        &i,
                         &params.text_document_position.position,
                     ),
                 LedgerCompletion::Directive(directive) if include.directives => Some(
@@ -333,10 +370,10 @@ impl LanguageServer for Lsp {
                 LedgerCompletion::File(filename) if include.files => Some(
                     CompletionItem::new_simple(filename.clone(), "File".to_string()),
                 ),
-                LedgerCompletion::Payee(payee) if include.payees => self.completion_with_edit(
+                LedgerCompletion::Payee(payee) if include.payees => state.completion_with_edit(
                     CompletionItem::new_simple(payee.clone(), "Payee".to_string()),
-                    contents,
-                    i,
+                    &contents,
+                    &i,
                     &params.text_document_position.position,
                 ),
                 LedgerCompletion::Period(period) if include.periods => Some(
@@ -353,12 +390,24 @@ impl LanguageServer for Lsp {
                 | LedgerCompletion::Tag(_) => None,
             })
             .collect();
+        log!(
+            self,
+            "[completion] filtered completions @ {:?}",
+            start_time.elapsed()
+        );
 
+        log!(
+            self,
+            "[completion] response: {} completions @ {:?}",
+            completions.len(),
+            start_time.elapsed()
+        );
         Ok(Some(CompletionResponse::Array(completions)))
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         log!(self, "[formatting] {params:?}");
+        let start_time = std::time::Instant::now();
 
         let state = self.state.lock().await;
         let source = match state.sources.get(params.text_document.uri.path()) {
@@ -374,6 +423,11 @@ impl LanguageServer for Lsp {
             }
         };
 
+        log!(
+            self,
+            "[formatting] response: done in {:?}",
+            start_time.elapsed()
+        );
         Ok(Some(vec![TextEdit {
             range: Range {
                 start: Position::new(0, 0),

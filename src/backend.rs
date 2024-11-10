@@ -1,11 +1,17 @@
 use ledger_parser::{Serializer, SerializerSettings};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tower_lsp::lsp_types::*;
-use tree_sitter::{Parser, Point};
+use tree_sitter::{Parser, Point, Tree};
 use walkdir::WalkDir;
 
 use crate::contents_of_path;
+
+fn substring(source: &[u8], start_byte: usize, end_byte: usize) -> String {
+    std::str::from_utf8(&source[start_byte..end_byte.min(source.len())])
+        .expect("converting bytes back to text")
+        .to_string()
+}
 
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LedgerCompletion {
@@ -17,10 +23,12 @@ pub enum LedgerCompletion {
     Tag(String),
 }
 
-#[derive(Debug)]
 pub struct LedgerBackend {
     _test_included_content: Option<String>,
     _test_project_files: Option<Vec<String>>,
+
+    /// Map of documents (ie source code text) to a parsed tree-sitter Tree
+    trees_cache: HashMap<String, Tree>,
 }
 
 impl LedgerBackend {
@@ -28,11 +36,31 @@ impl LedgerBackend {
         Self {
             _test_included_content: None,
             _test_project_files: None,
+            trees_cache: HashMap::new(),
+        }
+    }
+
+    fn parser(&self) -> Parser {
+        let mut parser = Parser::new();
+        parser
+            .set_language(tree_sitter_ledger::language())
+            .expect("loading Ledger tree-sitter grammar");
+        parser
+    }
+
+    /// Parse an input document (source code) and save the parsed Tree for use
+    /// later. If the document has already been cached, no new parsing is done.
+    pub fn parse_document<'a>(&mut self, content: &'a str) {
+        if !self.trees_cache.contains_key(content) {
+            self.trees_cache.insert(
+                content.to_string(),
+                self.parser().parse(content, None).unwrap(),
+            );
         }
     }
 
     pub fn completions(
-        &self,
+        &mut self,
         buffer_path: &str,
         content: &str,
         visited: &mut HashSet<String>,
@@ -83,32 +111,34 @@ impl LedgerBackend {
             });
         }
 
-        let mut parser = Parser::new();
-        parser
-            .set_language(tree_sitter_ledger::language())
-            .expect("loading Ledger tree-sitter grammar");
-        let tree = parser.parse(content, None).unwrap();
+        let tree = match self.trees_cache.get(content) {
+            Some(tree) => tree.clone(),
+            None => {
+                return Err(format!(
+                    "no tree found for contents of file '{buffer_path}'"
+                ))
+            }
+        };
 
         let query = tree_sitter::Query::new(
             tree_sitter_ledger::language(),
             "(payee) @payee (account) @account (note) @note (filename) @filename",
         )
         .expect("creating tree-sitter query");
-
         let mut cursor = tree_sitter::QueryCursor::new();
+
         let source = content.as_bytes();
         for m in cursor.matches(&query, tree.root_node(), source) {
             // (payee) @payee
             for n in m.nodes_for_capture_index(0) {
-                let payee = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
-                    .expect("converting bytes back to text")
-                    .to_string();
+                let payee = substring(source, n.start_byte(), n.end_byte());
                 completions.insert(LedgerCompletion::Payee(payee));
             }
 
             // (account) @account
             for n in m.nodes_for_capture_index(1) {
-                let account = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
+                let account = substring(source, n.start_byte(), n.end_byte());
+                std::str::from_utf8(&source[n.start_byte()..n.end_byte().min(source.len())])
                     .expect("converting bytes back to text")
                     .to_string();
                 completions.insert(LedgerCompletion::Account(account));
@@ -116,8 +146,7 @@ impl LedgerBackend {
 
             // (note) @note
             for n in m.nodes_for_capture_index(2) {
-                let note = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
-                    .expect("converting bytes back to text");
+                let note = substring(source, n.start_byte(), n.end_byte());
                 note.split('\n')
                     .filter_map(|l| {
                         match l
@@ -136,16 +165,15 @@ impl LedgerBackend {
 
             // (filename) @filename
             for n in m.nodes_for_capture_index(3) {
-                let filename = std::str::from_utf8(&source[n.start_byte()..n.end_byte()])
-                    .expect("converting bytes back to text");
+                let filename = substring(source, n.start_byte(), n.end_byte());
 
-                let path = Path::new(filename);
+                let path = Path::new(&filename);
                 let path = if path.is_absolute() {
                     path.to_path_buf()
                 } else {
                     current_dir.join(path)
                 };
-                let filename = path.as_os_str().to_str().unwrap_or(filename);
+                let filename = path.as_os_str().to_str().unwrap_or(&filename);
 
                 if visited.contains(filename) {
                     continue;
@@ -289,11 +317,7 @@ impl LedgerBackend {
         kind: &LedgerCompletion,
         position: &Position,
     ) -> Option<Range> {
-        let mut parser = Parser::new();
-        parser
-            .set_language(tree_sitter_ledger::language())
-            .expect("loading Ledger tree-sitter grammar");
-        let tree = parser.parse(content, None).unwrap();
+        let tree = self.trees_cache.get(content)?;
         let mut cursor = tree.walk();
 
         // descend to smallest node @ point
@@ -338,10 +362,6 @@ impl LedgerBackend {
 
 #[test]
 fn test_completions() {
-    let be = LedgerBackend {
-        _test_included_content: None,
-        _test_project_files: Some(vec![]),
-    };
     let source = textwrap::dedent(
         "
     24/01/02 Payee1
@@ -357,6 +377,11 @@ fn test_completions() {
         Three & Four
     ",
     );
+
+    let mut be = LedgerBackend::new();
+    be._test_project_files = Some(vec![]);
+    be.parse_document(&source);
+
     let mut visited = HashSet::new();
     let mut completions = be
         .completions("unused in test", &source, &mut visited)
@@ -453,10 +478,6 @@ fn test_completions() {
 
 #[test]
 fn test_completions_tags() {
-    let be = LedgerBackend {
-        _test_included_content: None,
-        _test_project_files: Some(vec![]),
-    };
     let source = textwrap::dedent(
         "
     24/01/02 Payee1
@@ -466,7 +487,13 @@ fn test_completions_tags() {
         Account2
     ",
     );
+
+    let mut be = LedgerBackend::new();
+    be._test_project_files = Some(vec![]);
+    be.parse_document(&source);
+
     let mut visited = HashSet::new();
+
     let mut completions = be
         .completions("unused in test", &source, &mut visited)
         .unwrap();
@@ -553,17 +580,21 @@ fn test_completions_tags() {
 
 #[test]
 fn test_completions_files() {
-    let be = LedgerBackend {
-        _test_included_content: None,
-        _test_project_files: Some(
-            vec!["foo.ledger", "bar.yaml", "baz/qux.ledger"]
-                .into_iter()
-                .map(|s| s.to_string())
-                .collect(),
-        ),
-    };
+    let source = "";
+
+    let mut be = LedgerBackend::new();
+    be._test_project_files = Some(
+        vec!["foo.ledger", "bar.yaml", "baz/qux.ledger"]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect(),
+    );
+    be.parse_document(source);
+
     let mut visited = HashSet::new();
-    let mut completions = be.completions("unused in test", "", &mut visited).unwrap();
+    let mut completions = be
+        .completions("unused in test", source, &mut visited)
+        .unwrap();
     completions.sort();
     insta::assert_debug_snapshot!(completions,
     @r#"
@@ -647,10 +678,12 @@ fn test_completions_from_included_files() {
         ",
     );
 
-    let be = LedgerBackend {
-        _test_included_content: Some(included),
-        _test_project_files: Some(vec![]),
-    };
+    let mut be = LedgerBackend::new();
+    be._test_included_content = Some(included.clone());
+    be._test_project_files = Some(vec![]);
+    be.parse_document(source);
+    be.parse_document(&included);
+
     let mut visited = HashSet::new();
 
     let mut completions = be
@@ -764,9 +797,11 @@ fn test_account_range() {
             Qux:Fiz
     ",
     );
+    let mut be = LedgerBackend::new();
+    be.parse_document(&source);
 
     // end of Bar
-    let range = LedgerBackend::new().node_range_at_position(
+    let range = be.node_range_at_position(
         &source,
         &LedgerCompletion::Account(String::new()),
         &Position {
@@ -792,7 +827,7 @@ fn test_account_range() {
     );
 
     // end of Qux
-    let range = LedgerBackend::new().node_range_at_position(
+    let range = be.node_range_at_position(
         &source,
         &LedgerCompletion::Account(String::new()),
         &Position {
@@ -818,7 +853,7 @@ fn test_account_range() {
     );
 
     // middle of Foo (payee, not account)
-    let range = LedgerBackend::new().node_range_at_position(
+    let range = be.node_range_at_position(
         &source,
         &LedgerCompletion::Account(String::new()),
         &Position {
@@ -833,7 +868,7 @@ fn test_account_range() {
     );
 
     // middle of Foo (payee)
-    let range = LedgerBackend::new().node_range_at_position(
+    let range = be.node_range_at_position(
         &source,
         &LedgerCompletion::Payee(String::new()),
         &Position {

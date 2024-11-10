@@ -14,7 +14,7 @@ async fn main() {
             let source = contents_of_path(&file).unwrap();
             let print_completions = true;
 
-            let be = LedgerBackend::new();
+            let mut be = LedgerBackend::new();
             let mut visited = HashSet::new();
             dump_debug(
                 "tree-sitter",
