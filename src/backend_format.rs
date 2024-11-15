@@ -225,7 +225,8 @@ impl<'tree> PlainXact {
         for child in xact.children(&mut cursor) {
             match child.unwrap() {
                 XactFields::Date(date) => {
-                    x.date = Some(substring(content, date.range()));
+                    let normalized_date = substring(content, date.range()).replace(['.', '-'], "/");
+                    x.date = Some(normalized_date);
                 }
                 XactFields::Code(code) => {
                     x.code = Some(substring(content, code.range()).trim().to_string());
@@ -775,24 +776,55 @@ fn format_journal() {
     );
 }
 
-// TODO fn serialize_with_custom_date_format() {
+#[test]
+fn format_normalize_dates() {
+    let source = textwrap::dedent(
+        "
+        2018.10.01 Payee
+            Account
+        2018-10-02 Payee
+            Account
+        2018/10-03 Payee
+            Account
+        2018.10/04 Payee
+            Account
+        ",
+    );
+
+    insta::assert_snapshot!(
+        format(&source).unwrap(),
+        @r"
+        2018/10/01 Payee
+            Account
+
+        2018/10/02 Payee
+            Account
+
+        2018/10/03 Payee
+            Account
+
+        2018/10/04 Payee
+            Account
+        "
+    );
+}
 
 #[test]
 fn format_sorted_transactions() {
     let source = textwrap::dedent(
         r#"
         ; first comment
-        2018-01-02 Payee 1
+        2018/01/02 Payee 1
           Account1  $1.23
           Account2
         ; xact 3 comment
-        2018-01-03 Payee 3
+        2018/01/03 Payee 3
           Account1  $1.23
           Account2
         ; foo comment
         include foo
         ; xact 2 comment
-        2018-01-01 Payee 2
+        2018/01/01 Payee 2
           Account3  $4.56
           Account4
         "#,
@@ -807,19 +839,19 @@ fn format_sorted_transactions() {
 
         ; xact 2 comment
 
-        2018-01-01 Payee 2
+        2018/01/01 Payee 2
             Account3                                   $4.56
             Account4
 
         ; first comment
 
-        2018-01-02 Payee 1
+        2018/01/02 Payee 1
             Account1                                   $1.23
             Account2
 
         ; xact 3 comment
 
-        2018-01-03 Payee 3
+        2018/01/03 Payee 3
             Account1                                   $1.23
             Account2
         "#
