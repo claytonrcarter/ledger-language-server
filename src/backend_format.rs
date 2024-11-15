@@ -7,6 +7,7 @@ use ledger::anon_unions::Interval_Note_Posting as PeriodicXactFields;
 use ledger::anon_unions::Note_Posting_Query as AutomatedXactFields;
 use type_sitter::{Node, Parser, Range, TreeCursor};
 
+use std::cmp::Ordering;
 use std::fmt::Display;
 use std::io::Write;
 
@@ -23,43 +24,109 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
     let tree = parser.parse(content, None).unwrap();
     let mut cursor = tree.walk();
 
+    //
+    // convert from tree sitter to internal types (easier to use)
+    //
+    let journal_items: Vec<JournalItem> =
+        tree.root_node()
+            .unwrap()
+            .journal_items(&mut cursor)
+            .map(|journal_item| {
+                match journal_item.unwrap().child().unwrap() {
+                    JournalItems::Comment(comment) => {
+                        JournalItem::Comment(substring(content, comment.range()))
+                    }
+                    JournalItems::Directive(directive) => {
+                        JournalItem::Directive(substring(content, directive.range()))
+                    }
+                    JournalItems::Xact(xact) => {
+                        match xact.child().unwrap() {
+                            Transactions::AutomatedXact(xact) => JournalItem::AutomatedXact(
+                                AutomatedXact::from_ts_xact(xact, content, || tree.walk()),
+                            ),
+                            Transactions::PeriodicXact(xact) => JournalItem::PeriodicXact(
+                                PeriodicXact::from_ts_xact(xact, content, || tree.walk()),
+                            ),
+                            Transactions::PlainXact(xact) => JournalItem::PlainXact(
+                                PlainXact::from_ts_xact(xact, content, || tree.walk()),
+                            ),
+                        }
+                    }
+                    JournalItems::BlockComment(comment) => {
+                        // TODO
+                        JournalItem::Comment(substring(content, comment.range()))
+                    }
+                    JournalItems::Test(test) => {
+                        // TODO
+                        JournalItem::Other(substring(content, test.range()))
+                    }
+                }
+            })
+            .collect();
+
+    //
+    // sort, attempting to keep comments that are interspersed with transactions
+    // together with those transactions, while pushing all other things to the
+    // start of the journal
+    //
+    let mut chunks = Vec::new();
+    let mut chunk = SortableChunk::new();
+    for journal_item in journal_items.iter() {
+        chunk.items.push(&journal_item);
+        match journal_item {
+            JournalItem::PlainXact(ref t) => {
+                chunk.date = t.date.clone();
+                chunks.push(chunk);
+                chunk = SortableChunk::new();
+            }
+            JournalItem::AutomatedXact(_)
+            | JournalItem::PeriodicXact(_)
+            | JournalItem::Directive(_) => {
+                chunks.push(chunk);
+                chunk = SortableChunk::new();
+            }
+            JournalItem::Comment(_) | JournalItem::Other(_) => {}
+        }
+    }
+    // in case of trailing comments
+    if !chunk.items.is_empty() {
+        chunks.push(chunk);
+    }
+
+    chunks.sort();
+
+    let journal_items = chunks
+        .iter()
+        .flat_map(|chunk| chunk.items.clone())
+        .cloned()
+        .collect::<Vec<JournalItem>>();
+
+    //
+    // print/format
+    //
     let mut previous_item = None;
     let mut buf = Vec::new();
-    for journal_item in tree.root_node().unwrap().journal_items(&mut cursor) {
-        let journal_item = journal_item.unwrap().child().unwrap();
-        let formatted_item = match journal_item {
-            JournalItems::Comment(comment) => substring(content, comment.range()),
-            JournalItems::Directive(directive) => substring(content, directive.range()),
-            JournalItems::Xact(xact) => match xact.child().unwrap() {
-                Transactions::AutomatedXact(xact) => {
-                    AutomatedXact::from_ts_xact(xact, content, || tree.walk()).to_string()
-                }
-                Transactions::PeriodicXact(xact) => {
-                    PeriodicXact::from_ts_xact(xact, content, || tree.walk()).to_string()
-                }
-                Transactions::PlainXact(xact) => {
-                    PlainXact::from_ts_xact(xact, content, || tree.walk()).to_string()
-                }
-            },
-            JournalItems::BlockComment(comment) => {
-                // TODO
-                substring(content, comment.range())
-            }
-            JournalItems::Test(test) => {
-                // TODO
-                substring(content, test.range())
+    for journal_item in journal_items {
+        let formatted_item = match &journal_item {
+            JournalItem::PlainXact(xact) => xact.to_string(),
+            JournalItem::PeriodicXact(xact) => xact.to_string(),
+            JournalItem::AutomatedXact(xact) => xact.to_string(),
+            JournalItem::Comment(s) | JournalItem::Directive(s) | JournalItem::Other(s) => {
+                s.clone()
             }
         };
 
         // group similar items together into blocks, but separate all xacts w/ a
         // blank line
-        match (previous_item, journal_item) {
+        match (previous_item, &journal_item) {
             (None, _)
-            | (Some(JournalItems::Comment(_)), JournalItems::Comment(_))
-            | (Some(JournalItems::Directive(_)), JournalItems::Directive(_))
-            | (Some(JournalItems::BlockComment(_)), JournalItems::BlockComment(_))
-            | (Some(JournalItems::Test(_)), JournalItems::Test(_)) => {}
-            (Some(JournalItems::Xact(_)), JournalItems::Xact(_)) | (Some(_), _) => {
+            | (Some(JournalItem::Comment(_)), JournalItem::Comment(_))
+            | (Some(JournalItem::Directive(_)), JournalItem::Directive(_))
+            | (Some(JournalItem::Other(_)), JournalItem::Other(_)) => {}
+            (_, JournalItem::PlainXact(_))
+            | (_, JournalItem::PeriodicXact(_))
+            | (_, JournalItem::AutomatedXact(_))
+            | (Some(_), _) => {
                 writeln!(buf, "")?;
             }
         }
@@ -76,26 +143,17 @@ fn substring(content: &str, range: Range) -> String {
     content[range.start_byte..range.end_byte].to_string()
 }
 
-#[derive(Debug, Default)]
-enum CommodityPosition {
-    #[default]
-    Left,
-    Right,
+#[derive(Clone, Eq, PartialEq)]
+enum JournalItem {
+    PlainXact(PlainXact),
+    PeriodicXact(PeriodicXact),
+    AutomatedXact(AutomatedXact),
+    Comment(String),
+    Directive(String),
+    Other(String),
 }
 
-#[derive(Debug, Default)]
-struct Posting {
-    account: String,
-    commodity_position: CommodityPosition,
-    commodity: Option<String>,
-    quantity: Option<String>,
-    balance_assertion: Option<String>,
-
-    inline_note: Option<String>,
-    trailing_notes: Vec<String>,
-}
-
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct PlainXact {
     /// the row on which the transaction starts
     row: usize,
@@ -111,7 +169,7 @@ struct PlainXact {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct PeriodicXact {
     /// the row on which the transaction starts
     row: usize,
@@ -123,7 +181,7 @@ struct PeriodicXact {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AutomatedXact {
     /// the row on which the transaction starts
     row: usize,
@@ -133,6 +191,25 @@ struct AutomatedXact {
 
     query_note: Option<String>,
     notes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+enum CommodityPosition {
+    #[default]
+    Left,
+    Right,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Posting {
+    account: String,
+    commodity_position: CommodityPosition,
+    commodity: Option<String>,
+    quantity: Option<String>,
+    balance_assertion: Option<String>,
+
+    inline_note: Option<String>,
+    trailing_notes: Vec<String>,
 }
 
 impl<'tree> PlainXact {
@@ -418,6 +495,45 @@ impl Display for Posting {
     }
 }
 
+#[derive(Eq, PartialEq)]
+struct SortableChunk<'a> {
+    date: Option<String>,
+    items: Vec<&'a JournalItem>,
+    // items: Vec<&'a dyn Node<'a>>,
+    // date: Option<&'a NaiveDate>,
+    // items: Vec<&'a LedgerItem>,
+}
+
+impl<'a> SortableChunk<'a> {
+    fn new() -> Self {
+        Self {
+            date: None,
+            items: Vec::new(),
+        }
+    }
+}
+
+impl<'a> Ord for SortableChunk<'a> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (&self.date, &other.date) {
+            (Some(self_date), Some(other_date)) => self_date.cmp(other_date),
+
+            // sort transactions below other items
+            (Some(_), _) => Ordering::Greater,
+            (_, Some(_)) => Ordering::Less,
+
+            // don't alter order of other items
+            (_, _) => Ordering::Equal,
+        }
+    }
+}
+
+impl<'a> PartialOrd for SortableChunk<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[test]
 fn format_transaction() {
     let source = textwrap::dedent(
@@ -660,3 +776,52 @@ fn format_journal() {
 }
 
 // TODO fn serialize_with_custom_date_format() {
+
+#[test]
+fn format_sorted_transactions() {
+    let source = textwrap::dedent(
+        r#"
+        ; first comment
+        2018-01-02 Payee 1
+          Account1  $1.23
+          Account2
+        ; xact 3 comment
+        2018-01-03 Payee 3
+          Account1  $1.23
+          Account2
+        ; foo comment
+        include foo
+        ; xact 2 comment
+        2018-01-01 Payee 2
+          Account3  $4.56
+          Account4
+        "#,
+    );
+
+    insta::assert_snapshot!(
+        format(&source).unwrap(),
+        @r#"
+        ; foo comment
+
+        include foo
+
+        ; xact 2 comment
+
+        2018-01-01 Payee 2
+            Account3                                   $4.56
+            Account4
+
+        ; first comment
+
+        2018-01-02 Payee 1
+            Account1                                   $1.23
+            Account2
+
+        ; xact 3 comment
+
+        2018-01-03 Payee 3
+            Account1                                   $1.23
+            Account2
+        "#
+    );
+}
