@@ -33,12 +33,14 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
             .journal_items(&mut cursor)
             .map(|journal_item| {
                 match journal_item.unwrap().child().unwrap() {
-                    JournalItems::Comment(comment) => {
-                        JournalItem::Comment(substring(content, comment.range()))
-                    }
-                    JournalItems::Directive(directive) => {
-                        JournalItem::Directive(substring(content, directive.range()))
-                    }
+                    JournalItems::Comment(comment) => JournalItem::Comment(Comment {
+                        range: comment.range(),
+                        content: substring(content, comment.range()),
+                    }),
+                    JournalItems::Directive(directive) => JournalItem::Directive(Directive {
+                        range: directive.range(),
+                        content: substring(content, directive.range()),
+                    }),
                     JournalItems::Xact(xact) => {
                         match xact.child().unwrap() {
                             Transactions::AutomatedXact(xact) => JournalItem::AutomatedXact(
@@ -54,7 +56,10 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
                     }
                     JournalItems::BlockComment(comment) => {
                         // TODO
-                        JournalItem::Comment(substring(content, comment.range()))
+                        JournalItem::Comment(Comment {
+                            range: comment.range(),
+                            content: substring(content, comment.range()),
+                        })
                     }
                     JournalItems::Test(test) => {
                         // TODO
@@ -111,18 +116,45 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
             JournalItem::PlainXact(xact) => xact.to_string(),
             JournalItem::PeriodicXact(xact) => xact.to_string(),
             JournalItem::AutomatedXact(xact) => xact.to_string(),
-            JournalItem::Comment(s) | JournalItem::Directive(s) | JournalItem::Other(s) => {
-                s.clone()
-            }
+            JournalItem::Comment(comment) => comment.content.clone(),
+            JournalItem::Directive(directive) => directive.content.clone(),
+            JournalItem::Other(s) => s.clone(),
         };
 
         // group similar items together into blocks, but separate all xacts w/ a
         // blank line
         match (previous_item, &journal_item) {
-            (None, _)
-            | (Some(JournalItem::Comment(_)), JournalItem::Comment(_))
-            | (Some(JournalItem::Directive(_)), JournalItem::Directive(_))
-            | (Some(JournalItem::Other(_)), JournalItem::Other(_)) => {}
+            // don't start w/ a newline, and don't split "other" items
+            (None, _) | (Some(JournalItem::Other(_)), JournalItem::Other(_)) => {}
+
+            // preserve gaps (but only 1 line) between blocks of comments and/or directives
+            (Some(JournalItem::Comment(prev_comment)), JournalItem::Comment(comment))
+                if prev_comment.range.end_point.row != comment.range.start_point.row =>
+            {
+                writeln!(buf, "")?
+            }
+
+            (Some(JournalItem::Directive(prev_directive)), JournalItem::Directive(directive))
+                if prev_directive.range.end_point.row != directive.range.start_point.row =>
+            {
+                writeln!(buf, "")?
+            }
+
+            // preserve blocks of comments and directives
+            (Some(JournalItem::Comment(_)), JournalItem::Comment(_))
+            | (Some(JournalItem::Directive(_)), JournalItem::Directive(_)) => {}
+
+            // don't split comments immediately preceeding directives and xacts
+            (Some(JournalItem::Comment(prev_comment)), JournalItem::Directive(directive))
+                if prev_comment.range.end_point.row == directive.range.start_point.row => {}
+            (Some(JournalItem::Comment(prev_comment)), JournalItem::PlainXact(xact))
+                if prev_comment.range.end_point.row == xact.range.start_point.row => {}
+            (Some(JournalItem::Comment(prev_comment)), JournalItem::PeriodicXact(xact))
+                if prev_comment.range.end_point.row == xact.range.start_point.row => {}
+            (Some(JournalItem::Comment(prev_comment)), JournalItem::AutomatedXact(xact))
+                if prev_comment.range.end_point.row == xact.range.start_point.row => {}
+
+            // separate transactions by a newline
             (_, JournalItem::PlainXact(_))
             | (_, JournalItem::PeriodicXact(_))
             | (_, JournalItem::AutomatedXact(_))
@@ -148,15 +180,26 @@ enum JournalItem {
     PlainXact(PlainXact),
     PeriodicXact(PeriodicXact),
     AutomatedXact(AutomatedXact),
-    Comment(String),
-    Directive(String),
+    Comment(Comment),
+    Directive(Directive),
     Other(String),
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
+struct Comment {
+    range: Range,
+    content: String,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+struct Directive {
+    range: Range,
+    content: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct PlainXact {
-    /// the row on which the transaction starts
-    row: usize,
+    range: Range,
 
     date: Option<String>,
     effective_date: Option<String>,
@@ -169,10 +212,9 @@ struct PlainXact {
     notes: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct PeriodicXact {
-    /// the row on which the transaction starts
-    row: usize,
+    range: Range,
 
     interval: String,
     postings: Vec<Posting>,
@@ -181,10 +223,9 @@ struct PeriodicXact {
     notes: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct AutomatedXact {
-    /// the row on which the transaction starts
-    row: usize,
+    range: Range,
 
     query: String,
     postings: Vec<Posting>,
@@ -213,13 +254,26 @@ struct Posting {
 }
 
 impl<'tree> PlainXact {
+    fn new(range: Range) -> Self {
+        Self {
+            range,
+            date: None,
+            effective_date: None,
+            status: None,
+            code: None,
+            payee: None,
+            postings: Vec::new(),
+            payee_note: None,
+            notes: Vec::new(),
+        }
+    }
+
     fn from_ts_xact<'a, T: Fn() -> TreeCursor<'tree>>(
         xact: ledger::PlainXact<'tree>,
         content: &str,
         cursor_fn: T,
     ) -> Self {
-        let mut x = PlainXact::default();
-        x.row = xact.range().start_point.row;
+        let mut x = PlainXact::new(xact.range());
 
         let mut cursor = cursor_fn();
         for child in xact.children(&mut cursor) {
@@ -235,7 +289,7 @@ impl<'tree> PlainXact {
                     x.effective_date = Some(substring(content, effective_date.range()));
                 }
                 XactFields::Note(note) => {
-                    if note.range().start_point.row == x.row {
+                    if note.range().start_point.row == x.range.start_point.row {
                         x.payee_note = Some(substring(content, note.range()));
                     } else if !x.postings.is_empty() {
                         // FIXME can we use in-place manipulation of the last() slice element
@@ -301,13 +355,22 @@ impl Display for PlainXact {
 }
 
 impl<'tree> PeriodicXact {
+    fn new(range: Range) -> Self {
+        Self {
+            range,
+            interval: String::new(),
+            postings: Vec::new(),
+            interval_note: None,
+            notes: Vec::new(),
+        }
+    }
+
     fn from_ts_xact<'a, T: Fn() -> TreeCursor<'tree>>(
         xact: ledger::PeriodicXact<'tree>,
         content: &str,
         cursor_fn: T,
     ) -> Self {
-        let mut x = PeriodicXact::default();
-        x.row = xact.range().start_point.row;
+        let mut x = PeriodicXact::new(xact.range());
 
         let mut cursor = cursor_fn();
         for child in xact.children(&mut cursor) {
@@ -316,7 +379,7 @@ impl<'tree> PeriodicXact {
                     x.interval = substring(content, interval.range());
                 }
                 PeriodicXactFields::Note(note) => {
-                    if note.range().start_point.row == x.row {
+                    if note.range().start_point.row == x.range.start_point.row {
                         x.interval_note = Some(substring(content, note.range()));
                     } else {
                         x.notes.push(substring(content, note.range()));
@@ -353,13 +416,22 @@ impl Display for PeriodicXact {
 }
 
 impl<'tree> AutomatedXact {
+    fn new(range: Range) -> Self {
+        Self {
+            range,
+            query: String::new(),
+            postings: Vec::new(),
+            query_note: None,
+            notes: Vec::new(),
+        }
+    }
+
     fn from_ts_xact<'a, T: Fn() -> TreeCursor<'tree>>(
         xact: ledger::AutomatedXact<'tree>,
         content: &str,
         cursor_fn: T,
     ) -> Self {
-        let mut x = AutomatedXact::default();
-        x.row = xact.range().start_point.row;
+        let mut x = AutomatedXact::new(xact.range());
 
         let mut cursor = cursor_fn();
         for child in xact.children(&mut cursor) {
@@ -368,7 +440,7 @@ impl<'tree> AutomatedXact {
                     x.query = substring(content, query.range()).trim().to_string();
                 }
                 AutomatedXactFields::Note(note) => {
-                    if note.range().start_point.row == x.row {
+                    if note.range().start_point.row == x.range.start_point.row {
                         x.query_note = Some(substring(content, note.range()));
                     } else {
                         x.notes.push(substring(content, note.range()));
@@ -706,11 +778,17 @@ fn format_grouping_journal_items() {
         "
         ; comment 1
         ; comment 2
+
+        ; comment 3
         include one.ledger
+
         include two.ledger
+        include three.ledger
+        ; comment 4
         2018/10/01 Payee
             TEST:ABC 123                               $1.20
             TEST:DEF 123
+        ; comment 5
         2018/11/22 Payee
             TEST:ABC 123                               $3.40
             TEST:DEF 123
@@ -723,13 +801,18 @@ fn format_grouping_journal_items() {
         ; comment 1
         ; comment 2
 
+        ; comment 3
         include one.ledger
-        include two.ledger
 
+        include two.ledger
+        include three.ledger
+
+        ; comment 4
         2018/10/01 Payee
             TEST:ABC 123                               $1.20
             TEST:DEF 123
 
+        ; comment 5
         2018/11/22 Payee
             TEST:ABC 123                               $3.40
             TEST:DEF 123
@@ -758,17 +841,14 @@ fn format_journal() {
         format(&source).unwrap(),
         @r#"
         ; comment 1
-
         include foo.ledger
 
         ; comment 3
-
         2023/12/21 Name
             Account1:Foo                                 -10
             Account2
 
         ; comment 2
-
         2023/12/22 Name
             Account1:Foo                                 -10
             Account2
@@ -822,6 +902,8 @@ fn format_sorted_transactions() {
           Account1  $1.23
           Account2
         ; foo comment
+
+        ; bar comment
         include foo
         ; xact 2 comment
         2018/01/01 Payee 2
@@ -835,22 +917,20 @@ fn format_sorted_transactions() {
         @r#"
         ; foo comment
 
+        ; bar comment
         include foo
 
         ; xact 2 comment
-
         2018/01/01 Payee 2
             Account3                                   $4.56
             Account4
 
         ; first comment
-
         2018/01/02 Payee 1
             Account1                                   $1.23
             Account2
 
         ; xact 3 comment
-
         2018/01/03 Payee 3
             Account1                                   $1.23
             Account2
