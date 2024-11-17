@@ -1146,6 +1146,57 @@ impl<'tree> type_sitter::Node<'tree> for JournalItem<'tree> {
         self.0
     }
 }
+#[doc = "Typed node `lot_price`\n\nThis node has a named child of type `amount` ([`Amount`])\n"]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+#[allow(non_camel_case_types)]
+pub struct LotPrice<'tree>(type_sitter::raw::Node<'tree>);
+#[automatically_derived]
+#[allow(unused)]
+impl<'tree> LotPrice<'tree> {
+    #[doc = "Get the node's only not-extra named child.\n\nThis child has type `amount` ([`Amount`])"]
+    #[inline]
+    pub fn amount(&self) -> type_sitter::NodeResult<'tree, Amount<'tree>> {
+        (0..type_sitter::Node::raw(self).named_child_count())
+            .map(|i| type_sitter::Node::raw(self).named_child(i).unwrap())
+            .filter(|n| !n.is_extra())
+            .next()
+            .map(<Amount<'tree> as type_sitter::Node<'tree>>::try_from_raw)
+            .expect(
+                "required child not present, there should at least be a MISSING node in its place",
+            )
+    }
+}
+#[automatically_derived]
+impl<'tree> type_sitter::Node<'tree> for LotPrice<'tree> {
+    type WithLifetime<'a> = LotPrice<'a>;
+    const KIND: &'static str = "lot_price";
+    #[inline]
+    fn try_from_raw(node: type_sitter::raw::Node<'tree>) -> type_sitter::NodeResult<Self> {
+        if node.kind() == "lot_price" {
+            Ok(Self(node))
+        } else {
+            Err(type_sitter::IncorrectKind::new::<Self>(node))
+        }
+    }
+    #[inline]
+    unsafe fn from_raw_unchecked(node: type_sitter::raw::Node<'tree>) -> Self {
+        debug_assert_eq!(node.kind(), "lot_price");
+        Self(node)
+    }
+    #[inline]
+    fn raw(&self) -> &type_sitter::raw::Node<'tree> {
+        &self.0
+    }
+    #[inline]
+    fn raw_mut(&mut self) -> &mut type_sitter::raw::Node<'tree> {
+        &mut self.0
+    }
+    #[inline]
+    fn into_raw(self) -> type_sitter::raw::Node<'tree> {
+        self.0
+    }
+}
 #[doc = "Typed node `negative_quantity`\n\nThis node has no named children\n"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
@@ -1274,10 +1325,10 @@ impl<'tree> type_sitter::Node<'tree> for NoteSubdirective<'tree> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 #[allow(non_camel_case_types)]
-pub struct Option<'tree>(type_sitter::raw::Node<'tree>);
+pub struct _Option<'tree>(type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> Option<'tree> {
+impl<'tree> _Option<'tree> {
     #[doc = "Get the node's only not-extra named child, if it has one.\n\nThis child has type `option_value?` ([`OptionValue`])"]
     #[inline]
     pub fn option_value(&self) -> Option<type_sitter::NodeResult<'tree, OptionValue<'tree>>> {
@@ -1289,8 +1340,8 @@ impl<'tree> Option<'tree> {
     }
 }
 #[automatically_derived]
-impl<'tree> type_sitter::Node<'tree> for Option<'tree> {
-    type WithLifetime<'a> = Option<'a>;
+impl<'tree> type_sitter::Node<'tree> for _Option<'tree> {
+    type WithLifetime<'a> = _Option<'a>;
     const KIND: &'static str = "option";
     #[inline]
     fn try_from_raw(node: type_sitter::raw::Node<'tree>) -> type_sitter::NodeResult<Self> {
@@ -1497,7 +1548,7 @@ impl<'tree> type_sitter::Node<'tree> for PlainXact<'tree> {
         self.0
     }
 }
-#[doc = "Typed node `posting`\n\nThis node has named children of type `{account | amount | balance_assertion | note | price | status}+`:\n\n- [`Account`]\n- [`Amount`]\n- [`BalanceAssertion`]\n- [`Note`]\n- [`Price`]\n- [`Status`]\n\n"]
+#[doc = "Typed node `posting`\n\nThis node has named children of type `{account | amount | balance_assertion | lot_price | note | price | status}+`:\n\n- [`Account`]\n- [`Amount`]\n- [`BalanceAssertion`]\n- [`LotPrice`]\n- [`Note`]\n- [`Price`]\n- [`Status`]\n\n"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 #[allow(non_camel_case_types)]
@@ -1505,7 +1556,7 @@ pub struct Posting<'tree>(type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
 impl<'tree> Posting<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{account | amount | balance_assertion | note | price | status}+`:\n\n- [`Account`]\n- [`Amount`]\n- [`BalanceAssertion`]\n- [`Note`]\n- [`Price`]\n- [`Status`]\n"]
+    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{account | amount | balance_assertion | lot_price | note | price | status}+`:\n\n- [`Account`]\n- [`Amount`]\n- [`BalanceAssertion`]\n- [`LotPrice`]\n- [`Note`]\n- [`Price`]\n- [`Status`]\n"]
     #[doc = "\n\nThis is guaranteed to return at least one child."]
     #[inline]
     pub fn children<'a>(
@@ -1514,10 +1565,10 @@ impl<'tree> Posting<'tree> {
     ) -> impl Iterator<
         Item = type_sitter::NodeResult<
             'tree,
-            anon_unions::Account_Amount_BalanceAssertion_Note_Price_Status<'tree>,
+            anon_unions::Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status<'tree>,
         >,
     > + 'a {
-        type_sitter :: Node :: raw (self) . named_children (& mut c . 0) . filter (| n | ! n . is_extra ()) . map (< anon_unions :: Account_Amount_BalanceAssertion_Note_Price_Status < 'tree > as type_sitter :: Node < 'tree >> :: try_from_raw)
+        type_sitter :: Node :: raw (self) . named_children (& mut c . 0) . filter (| n | ! n . is_extra ()) . map (< anon_unions :: Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status < 'tree > as type_sitter :: Node < 'tree >> :: try_from_raw)
     }
 }
 #[automatically_derived]
@@ -3915,6 +3966,158 @@ pub mod symbols {
             self.0
         }
     }
+    #[doc = "Typed node `{`\n\nThis node has no named children\n"]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[repr(transparent)]
+    #[allow(non_camel_case_types)]
+    pub struct LBrace<'tree>(type_sitter::raw::Node<'tree>);
+    #[automatically_derived]
+    #[allow(unused)]
+    impl<'tree> LBrace<'tree> {}
+    #[automatically_derived]
+    impl<'tree> type_sitter::Node<'tree> for LBrace<'tree> {
+        type WithLifetime<'a> = LBrace<'a>;
+        const KIND: &'static str = "{";
+        #[inline]
+        fn try_from_raw(node: type_sitter::raw::Node<'tree>) -> type_sitter::NodeResult<Self> {
+            if node.kind() == "{" {
+                Ok(Self(node))
+            } else {
+                Err(type_sitter::IncorrectKind::new::<Self>(node))
+            }
+        }
+        #[inline]
+        unsafe fn from_raw_unchecked(node: type_sitter::raw::Node<'tree>) -> Self {
+            debug_assert_eq!(node.kind(), "{");
+            Self(node)
+        }
+        #[inline]
+        fn raw(&self) -> &type_sitter::raw::Node<'tree> {
+            &self.0
+        }
+        #[inline]
+        fn raw_mut(&mut self) -> &mut type_sitter::raw::Node<'tree> {
+            &mut self.0
+        }
+        #[inline]
+        fn into_raw(self) -> type_sitter::raw::Node<'tree> {
+            self.0
+        }
+    }
+    #[doc = "Typed node `{{`\n\nThis node has no named children\n"]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[repr(transparent)]
+    #[allow(non_camel_case_types)]
+    pub struct LBraceLBrace<'tree>(type_sitter::raw::Node<'tree>);
+    #[automatically_derived]
+    #[allow(unused)]
+    impl<'tree> LBraceLBrace<'tree> {}
+    #[automatically_derived]
+    impl<'tree> type_sitter::Node<'tree> for LBraceLBrace<'tree> {
+        type WithLifetime<'a> = LBraceLBrace<'a>;
+        const KIND: &'static str = "{{";
+        #[inline]
+        fn try_from_raw(node: type_sitter::raw::Node<'tree>) -> type_sitter::NodeResult<Self> {
+            if node.kind() == "{{" {
+                Ok(Self(node))
+            } else {
+                Err(type_sitter::IncorrectKind::new::<Self>(node))
+            }
+        }
+        #[inline]
+        unsafe fn from_raw_unchecked(node: type_sitter::raw::Node<'tree>) -> Self {
+            debug_assert_eq!(node.kind(), "{{");
+            Self(node)
+        }
+        #[inline]
+        fn raw(&self) -> &type_sitter::raw::Node<'tree> {
+            &self.0
+        }
+        #[inline]
+        fn raw_mut(&mut self) -> &mut type_sitter::raw::Node<'tree> {
+            &mut self.0
+        }
+        #[inline]
+        fn into_raw(self) -> type_sitter::raw::Node<'tree> {
+            self.0
+        }
+    }
+    #[doc = "Typed node `}`\n\nThis node has no named children\n"]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[repr(transparent)]
+    #[allow(non_camel_case_types)]
+    pub struct RBrace<'tree>(type_sitter::raw::Node<'tree>);
+    #[automatically_derived]
+    #[allow(unused)]
+    impl<'tree> RBrace<'tree> {}
+    #[automatically_derived]
+    impl<'tree> type_sitter::Node<'tree> for RBrace<'tree> {
+        type WithLifetime<'a> = RBrace<'a>;
+        const KIND: &'static str = "}";
+        #[inline]
+        fn try_from_raw(node: type_sitter::raw::Node<'tree>) -> type_sitter::NodeResult<Self> {
+            if node.kind() == "}" {
+                Ok(Self(node))
+            } else {
+                Err(type_sitter::IncorrectKind::new::<Self>(node))
+            }
+        }
+        #[inline]
+        unsafe fn from_raw_unchecked(node: type_sitter::raw::Node<'tree>) -> Self {
+            debug_assert_eq!(node.kind(), "}");
+            Self(node)
+        }
+        #[inline]
+        fn raw(&self) -> &type_sitter::raw::Node<'tree> {
+            &self.0
+        }
+        #[inline]
+        fn raw_mut(&mut self) -> &mut type_sitter::raw::Node<'tree> {
+            &mut self.0
+        }
+        #[inline]
+        fn into_raw(self) -> type_sitter::raw::Node<'tree> {
+            self.0
+        }
+    }
+    #[doc = "Typed node `}}`\n\nThis node has no named children\n"]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[repr(transparent)]
+    #[allow(non_camel_case_types)]
+    pub struct RBraceRBrace<'tree>(type_sitter::raw::Node<'tree>);
+    #[automatically_derived]
+    #[allow(unused)]
+    impl<'tree> RBraceRBrace<'tree> {}
+    #[automatically_derived]
+    impl<'tree> type_sitter::Node<'tree> for RBraceRBrace<'tree> {
+        type WithLifetime<'a> = RBraceRBrace<'a>;
+        const KIND: &'static str = "}}";
+        #[inline]
+        fn try_from_raw(node: type_sitter::raw::Node<'tree>) -> type_sitter::NodeResult<Self> {
+            if node.kind() == "}}" {
+                Ok(Self(node))
+            } else {
+                Err(type_sitter::IncorrectKind::new::<Self>(node))
+            }
+        }
+        #[inline]
+        unsafe fn from_raw_unchecked(node: type_sitter::raw::Node<'tree>) -> Self {
+            debug_assert_eq!(node.kind(), "}}");
+            Self(node)
+        }
+        #[inline]
+        fn raw(&self) -> &type_sitter::raw::Node<'tree> {
+            &self.0
+        }
+        #[inline]
+        fn raw_mut(&mut self) -> &mut type_sitter::raw::Node<'tree> {
+            &mut self.0
+        }
+        #[inline]
+        fn into_raw(self) -> type_sitter::raw::Node<'tree> {
+            self.0
+        }
+    }
     #[doc = "Typed node `~`\n\nThis node has no named children\n"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     #[repr(transparent)]
@@ -3966,7 +4169,7 @@ pub mod anon_unions {
         AccountDirective(AccountDirective<'tree>),
         CharDirective(CharDirective<'tree>),
         CommodityDirective(CommodityDirective<'tree>),
-        Option(Option<'tree>),
+        Option(_Option<'tree>),
         TagDirective(TagDirective<'tree>),
         WordDirective(WordDirective<'tree>),
     }
@@ -4007,7 +4210,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `option` ([`Option`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_option(self) -> Option<Option<'tree>> {
+        pub fn as_option(self) -> Option<_Option<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Option(x) = self {
                 Some(x)
@@ -4069,7 +4272,7 @@ pub mod anon_unions {
                 }),
                 "option" => Ok(unsafe {
                     Self::Option(
-                        <Option<'tree> as type_sitter::Node<'tree>>::from_raw_unchecked(node),
+                        <_Option<'tree> as type_sitter::Node<'tree>>::from_raw_unchecked(node),
                     )
                 }),
                 "tag_directive" => Ok(unsafe {
@@ -4194,20 +4397,21 @@ pub mod anon_unions {
             }
         }
     }
-    #[doc = "One of `{account | amount | balance_assertion | note | price | status}`:\n- [`Account`]\n- [`Amount`]\n- [`BalanceAssertion`]\n- [`Note`]\n- [`Price`]\n- [`Status`]"]
+    #[doc = "One of `{account | amount | balance_assertion | lot_price | note | price | status}`:\n- [`Account`]\n- [`Amount`]\n- [`BalanceAssertion`]\n- [`LotPrice`]\n- [`Note`]\n- [`Price`]\n- [`Status`]"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types)]
-    pub enum Account_Amount_BalanceAssertion_Note_Price_Status<'tree> {
+    pub enum Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status<'tree> {
         Account(Account<'tree>),
         Amount(Amount<'tree>),
         BalanceAssertion(BalanceAssertion<'tree>),
+        LotPrice(LotPrice<'tree>),
         Note(Note<'tree>),
         Price(Price<'tree>),
         Status(Status<'tree>),
     }
     #[automatically_derived]
     #[allow(unused)]
-    impl<'tree> Account_Amount_BalanceAssertion_Note_Price_Status<'tree> {
+    impl<'tree> Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status<'tree> {
         #[doc = "Returns the node if it is of type `account` ([`Account`]), otherwise returns `None`"]
         #[inline]
         pub fn as_account(self) -> Option<Account<'tree>> {
@@ -4233,6 +4437,16 @@ pub mod anon_unions {
         pub fn as_balance_assertion(self) -> Option<BalanceAssertion<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::BalanceAssertion(x) = self {
+                Some(x)
+            } else {
+                None
+            }
+        }
+        #[doc = "Returns the node if it is of type `lot_price` ([`LotPrice`]), otherwise returns `None`"]
+        #[inline]
+        pub fn as_lot_price(self) -> Option<LotPrice<'tree>> {
+            #[allow(irrefutable_let_patterns)]
+            if let Self::LotPrice(x) = self {
                 Some(x)
             } else {
                 None
@@ -4270,9 +4484,12 @@ pub mod anon_unions {
         }
     }
     #[automatically_derived]
-    impl<'tree> type_sitter::Node<'tree> for Account_Amount_BalanceAssertion_Note_Price_Status<'tree> {
-        type WithLifetime<'a> = Account_Amount_BalanceAssertion_Note_Price_Status<'a>;
-        const KIND: &'static str = "{account | amount | balance_assertion | note | price | status}";
+    impl<'tree> type_sitter::Node<'tree>
+        for Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status<'tree>
+    {
+        type WithLifetime<'a> = Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status<'a>;
+        const KIND: &'static str =
+            "{account | amount | balance_assertion | lot_price | note | price | status}";
         #[inline]
         fn try_from_raw(node: type_sitter::raw::Node<'tree>) -> type_sitter::NodeResult<Self> {
             match node.kind() {
@@ -4293,6 +4510,11 @@ pub mod anon_unions {
                         >>::from_raw_unchecked(node))
                     })
                 }
+                "lot_price" => Ok(unsafe {
+                    Self::LotPrice(
+                        <LotPrice<'tree> as type_sitter::Node<'tree>>::from_raw_unchecked(node),
+                    )
+                }),
                 "note" => Ok(unsafe {
                     Self::Note(<Note<'tree> as type_sitter::Node<'tree>>::from_raw_unchecked(node))
                 }),
@@ -4315,6 +4537,7 @@ pub mod anon_unions {
                 Self::Account(x) => type_sitter::Node::raw(x),
                 Self::Amount(x) => type_sitter::Node::raw(x),
                 Self::BalanceAssertion(x) => type_sitter::Node::raw(x),
+                Self::LotPrice(x) => type_sitter::Node::raw(x),
                 Self::Note(x) => type_sitter::Node::raw(x),
                 Self::Price(x) => type_sitter::Node::raw(x),
                 Self::Status(x) => type_sitter::Node::raw(x),
@@ -4326,6 +4549,7 @@ pub mod anon_unions {
                 Self::Account(x) => type_sitter::Node::raw_mut(x),
                 Self::Amount(x) => type_sitter::Node::raw_mut(x),
                 Self::BalanceAssertion(x) => type_sitter::Node::raw_mut(x),
+                Self::LotPrice(x) => type_sitter::Node::raw_mut(x),
                 Self::Note(x) => type_sitter::Node::raw_mut(x),
                 Self::Price(x) => type_sitter::Node::raw_mut(x),
                 Self::Status(x) => type_sitter::Node::raw_mut(x),
@@ -4337,6 +4561,7 @@ pub mod anon_unions {
                 Self::Account(x) => x.into_raw(),
                 Self::Amount(x) => x.into_raw(),
                 Self::BalanceAssertion(x) => x.into_raw(),
+                Self::LotPrice(x) => x.into_raw(),
                 Self::Note(x) => x.into_raw(),
                 Self::Price(x) => x.into_raw(),
                 Self::Status(x) => x.into_raw(),
@@ -4524,7 +4749,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `payee` ([`Payee`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_payee_(self) -> Option<Payee<'tree>> {
+        pub fn as_payee(self) -> Option<Payee<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Payee(x) = self {
                 Some(x)
@@ -5209,7 +5434,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `payee` ([`Payee`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_payee_(self) -> Option<Payee<'tree>> {
+        pub fn as_payee(self) -> Option<Payee<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Payee(x) = self {
                 Some(x)

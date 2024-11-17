@@ -1,4 +1,4 @@
-use ledger::anon_unions::Account_Amount_BalanceAssertion_Note_Price_Status as PostingFields;
+use ledger::anon_unions::Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status as PostingFields;
 use ledger::anon_unions::AutomatedXact_PeriodicXact_PlainXact as Transactions;
 use ledger::anon_unions::BlockComment_Comment_Directive_Test_Xact as JournalItems;
 use ledger::anon_unions::Code_Date_EffectiveDate_Note_Payee_Posting_Status as XactFields;
@@ -12,7 +12,7 @@ use std::fmt::Display;
 use std::io::Write;
 
 mod ledger {
-    include!("./type_sitter/ledger/nodes.rs");
+    include!("./type_sitter/ledger.rs");
 }
 
 pub fn format(content: &str) -> Result<String, std::io::Error> {
@@ -244,13 +244,21 @@ enum CommodityPosition {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Posting {
     account: String,
-    commodity_position: CommodityPosition,
-    commodity: Option<String>,
-    quantity: Option<String>,
-    balance_assertion: Option<String>,
+
+    amount: Option<Amount>,
+    lot_price: Option<Amount>,
+    price: Option<Amount>,
+    balance_assertion: Option<Amount>,
 
     inline_note: Option<String>,
     trailing_notes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Amount {
+    commodity_position: CommodityPosition,
+    commodity: Option<String>,
+    quantity: Option<String>,
 }
 
 impl<'tree> PlainXact {
@@ -491,33 +499,35 @@ impl<'tree> Posting {
                     p.account = substring(content, account.range());
                 }
                 PostingFields::Amount(amount) => {
-                    let mut cursor = cursor_fn();
-                    for a_child in amount.children(&mut cursor) {
-                        match a_child.unwrap() {
-                            AmountFields::Commodity(commodity) => {
-                                p.commodity = Some(substring(content, commodity.range()));
-                                p.commodity_position = match p.quantity {
-                                    None => CommodityPosition::Left,
-                                    Some(_) => CommodityPosition::Right,
-                                };
-                            }
-                            AmountFields::NegativeQuantity(quantity) => {
-                                p.quantity = Some(substring(content, quantity.range()));
-                            }
-                            AmountFields::Quantity(quantity) => {
-                                p.quantity = Some(substring(content, quantity.range()));
-                            }
-                        }
-                    }
+                    p.amount = Some(Amount::from_ts(amount, content, &cursor_fn));
                 }
                 PostingFields::BalanceAssertion(ba) => {
-                    p.balance_assertion = Some(substring(content, ba.range()));
+                    p.balance_assertion =
+                        Some(Amount::from_ts(ba.amount().unwrap(), content, &cursor_fn));
                 }
                 PostingFields::Note(note) => {
                     p.inline_note = Some(substring(content, note.range()));
                 }
-                PostingFields::Price(_) => todo!(),
-                PostingFields::Status(_) => todo!(),
+                PostingFields::LotPrice(lot_price) => {
+                    p.lot_price = Some(Amount::from_ts(
+                        lot_price.amount().unwrap(),
+                        content,
+                        &cursor_fn,
+                    ))
+                }
+                PostingFields::Price(price) => {
+                    p.price = Some(Amount::from_ts(
+                        price.amount().unwrap(),
+                        content,
+                        &cursor_fn,
+                    ))
+                }
+                PostingFields::Status(_) => {
+                    todo!(
+                        "posting status on line: {}",
+                        substring(content, posting.range())
+                    )
+                }
             }
         }
         p
@@ -526,18 +536,18 @@ impl<'tree> Posting {
 
 impl Display for Posting {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let amount = match (&self.commodity, &self.quantity) {
-            (Some(commodity), Some(quantity)) => match self.commodity_position {
-                CommodityPosition::Left => format!("{commodity}{quantity}"),
-                CommodityPosition::Right => format!("{quantity}{commodity}"),
-            },
-            (None, Some(quantity)) => quantity.clone(),
-            (Some(_), None) | (None, None) => String::new(),
+        let mut amount = match &self.amount {
+            Some(amount) => format!("{amount}"),
+            None => String::new(),
         };
-        let amount = if let Some(ref assertion) = self.balance_assertion {
-            format!("{amount} {assertion}")
-        } else {
-            amount
+        if let Some(ref lot_price) = self.lot_price {
+            amount.push_str(format!(" {{{lot_price}}}").as_str());
+        };
+        if let Some(ref price) = self.price {
+            amount.push_str(format!(" @@ {price}").as_str());
+        };
+        if let Some(ref assertion) = self.balance_assertion {
+            amount.push_str(format!(" = {assertion}").as_str());
         };
 
         let amount_width = if amount.is_empty() {
@@ -563,6 +573,52 @@ impl Display for Posting {
         for note in self.trailing_notes.iter() {
             writeln!(f, "    {note}")?;
         }
+
+        Ok(())
+    }
+}
+
+impl<'tree> Amount {
+    fn from_ts<'a, T: Fn() -> TreeCursor<'tree>>(
+        amount: ledger::Amount<'tree>,
+        content: &str,
+        cursor_fn: T,
+    ) -> Self {
+        let mut a = Amount::default();
+
+        let mut cursor = cursor_fn();
+        for a_child in amount.children(&mut cursor) {
+            match a_child.unwrap() {
+                AmountFields::Commodity(commodity) => {
+                    a.commodity = Some(substring(content, commodity.range()));
+                    a.commodity_position = match a.quantity {
+                        None => CommodityPosition::Left,
+                        Some(_) => CommodityPosition::Right,
+                    };
+                }
+                AmountFields::NegativeQuantity(quantity) => {
+                    a.quantity = Some(substring(content, quantity.range()));
+                }
+                AmountFields::Quantity(quantity) => {
+                    a.quantity = Some(substring(content, quantity.range()));
+                }
+            }
+        }
+
+        a
+    }
+}
+
+impl Display for Amount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (&self.commodity, &self.quantity) {
+            (Some(commodity), Some(quantity)) => match self.commodity_position {
+                CommodityPosition::Left => write!(f, "{commodity}{quantity}")?,
+                CommodityPosition::Right => write!(f, "{quantity}{commodity}")?,
+            },
+            (None, Some(quantity)) => write!(f, "{quantity}")?,
+            (Some(_), None) | (None, None) => {}
+        };
 
         Ok(())
     }
@@ -768,6 +824,26 @@ fn format_balance_assertions() {
         2018/10/01 Payee
             TEST:ABC 123                        $1.20 = $123
             TEST:DEF 123                              = $456
+        "
+    );
+}
+
+#[test]
+fn format_prices() {
+    let source = textwrap::dedent(
+        "
+        2023/11/21 Belfast Co-op
+            Produce:Sweet Potatoes          -80  {$2.40}    @@    $192
+            Assets:Accounts Recievable
+        ",
+    );
+
+    insta::assert_snapshot!(
+        format(&source).unwrap(),
+        @r"
+        2023/11/21 Belfast Co-op
+            Produce:Sweet Potatoes       -80 {$2.40} @@ $192
+            Assets:Accounts Recievable
         "
     );
 }
