@@ -357,6 +357,8 @@ impl LanguageServer for Lsp {
         let completions: Vec<CompletionItem> = completions
             .iter()
             .filter_map(|i| match i {
+                // FIXME there is no need to recompute the range of the current node
+                // for each completion; it should be calculated once and reued
                 LedgerCompletion::Account(account) if include.accounts => state
                     .completion_with_edit(
                         CompletionItem::new_simple(account.clone(), "Account".to_string()),

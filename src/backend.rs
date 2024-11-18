@@ -308,24 +308,23 @@ impl LedgerBackend {
             row: position.line as usize,
             column: position.character as usize,
         };
-        let node = tree
-            .root_node()
-            .named_descendant_for_point_range(point, point)?;
-        // let mut cursor = tree.walk();
+        let mut cursor = tree.walk();
 
         // descend to smallest node @ point
-        // while cursor
-        //     .goto_first_child_for_point(point)
-        //     .is_some()
-        // {}
+        while cursor.goto_first_child_for_point(point).is_some() {}
 
-        // ascend to first named node
-        // while !cursor.node().is_named() {
-        //     cursor.goto_parent();
-        // }
+        // seek to first named node; if the current (unnamed) node starts at
+        // point, then the point/cursor could be at the "end" of the previous
+        // node
+        while !cursor.node().is_named() {
+            if cursor.node().range().start_point == point {
+                cursor.goto_previous_sibling();
+            } else {
+                cursor.goto_parent();
+            }
+        }
 
-        // let node_kind = cursor.node().kind();
-        let node_kind = node.kind();
+        let node_kind = cursor.node().kind();
         match kind {
             LedgerCompletion::Account(_) if node_kind == "account" => {}
             LedgerCompletion::Payee(_) if node_kind == "payee" => {}
@@ -337,7 +336,7 @@ impl LedgerBackend {
             | LedgerCompletion::Tag(_) => return None,
         }
 
-        let range = node.range();
+        let range = cursor.node().range();
         Some(Range {
             start: Position {
                 line: range.start_point.row as u32,
@@ -786,7 +785,7 @@ fn test_account_range() {
         "
         2023/09/28 Foo
             Bar   $-160.00
-            Qux:Fiz
+            Qux:Fiz:Wi
     ",
     );
     let mut be = LedgerBackend::new();
@@ -800,7 +799,7 @@ fn test_account_range() {
         &LedgerCompletion::Account(String::new()),
         &Position {
             line: 2,
-            character: 6,
+            character: 7,
         },
     );
     insta::assert_debug_snapshot!(range,
@@ -839,7 +838,33 @@ fn test_account_range() {
             },
             end: Position {
                 line: 3,
-                character: 11,
+                character: 14,
+            },
+        },
+    )
+    ",
+    );
+
+    // end of Wi
+    let range = be.node_range_at_position(
+        &source,
+        &LedgerCompletion::Account(String::new()),
+        &Position {
+            line: 3,
+            character: 14,
+        },
+    );
+    insta::assert_debug_snapshot!(range,
+    @r"
+    Some(
+        Range {
+            start: Position {
+                line: 3,
+                character: 4,
+            },
+            end: Position {
+                line: 3,
+                character: 14,
             },
         },
     )
