@@ -247,11 +247,17 @@ struct Posting {
 
     amount: Option<Amount>,
     lot_price: Option<Amount>,
-    price: Option<Amount>,
+    price: Option<Price>,
     balance_assertion: Option<Amount>,
 
     inline_note: Option<String>,
     trailing_notes: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Price {
+    Unit(Amount),
+    Total(Amount),
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -516,11 +522,13 @@ impl<'tree> Posting {
                     ))
                 }
                 PostingFields::Price(price) => {
-                    p.price = Some(Amount::from_ts(
-                        price.amount().unwrap(),
-                        content,
-                        &cursor_fn,
-                    ))
+                    let amount = Amount::from_ts(price.amount().unwrap(), content, &cursor_fn);
+
+                    p.price = if substring(content, price.range()).starts_with("@@") {
+                        Some(Price::Total(amount))
+                    } else {
+                        Some(Price::Unit(amount))
+                    };
                 }
                 PostingFields::Status(_) => {
                     todo!(
@@ -544,7 +552,7 @@ impl Display for Posting {
             amount.push_str(format!(" {{{lot_price}}}").as_str());
         };
         if let Some(ref price) = self.price {
-            amount.push_str(format!(" @@ {price}").as_str());
+            amount.push_str(format!(" {price}").as_str());
         };
         if let Some(ref assertion) = self.balance_assertion {
             amount.push_str(format!(" = {assertion}").as_str());
@@ -572,6 +580,17 @@ impl Display for Posting {
 
         for note in self.trailing_notes.iter() {
             writeln!(f, "    {note}")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Display for Price {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Price::Unit(amount) => write!(f, "@ {amount}")?,
+            Price::Total(amount) => write!(f, "@@ {amount}")?,
         }
 
         Ok(())
@@ -832,8 +851,11 @@ fn format_balance_assertions() {
 fn format_prices() {
     let source = textwrap::dedent(
         "
-        2023/11/21 Belfast Co-op
+        2023/11/21
             Produce:Sweet Potatoes          -80  {$2.40}    @@    $192
+            Assets:Accounts Recievable
+        2023/11/21
+            Produce:Peppers          -80 lb @ $2.40
             Assets:Accounts Recievable
         ",
     );
@@ -841,8 +863,12 @@ fn format_prices() {
     insta::assert_snapshot!(
         format(&source).unwrap(),
         @r"
-        2023/11/21 Belfast Co-op
+        2023/11/21
             Produce:Sweet Potatoes       -80 {$2.40} @@ $192
+            Assets:Accounts Recievable
+
+        2023/11/21
+            Produce:Peppers                    -80lb @ $2.40
             Assets:Accounts Recievable
         "
     );
