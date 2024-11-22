@@ -20,7 +20,14 @@ pub enum LedgerCompletion {
     File(String),
     Payee(String),
     Period(String),
+    PeriodSnippet(Snippet),
     Tag(String),
+}
+
+#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Snippet {
+    pub label: String,
+    pub snippet: String,
 }
 
 pub struct LedgerBackend {
@@ -222,7 +229,7 @@ impl LedgerBackend {
 
     fn completions_insert_periods(&self, completions: &mut HashSet<LedgerCompletion>) {
         // only worrying about the most common for now
-        // https://ledger-cli.org/doc/ledger3.html#Command-Directives
+        // https://ledger-cli.org/doc/ledger3.html#Period-Expressions
         vec![
             "Every Day",
             "Every Week",
@@ -241,6 +248,35 @@ impl LedgerBackend {
         .for_each(|s| {
             completions.insert(LedgerCompletion::Period(s.to_string()));
         });
+
+        vec![
+            "Every $1 Days",
+            "Every $1 Weeks",
+            "Every $1 Months",
+            "Every $1 Quarters",
+            "Every $1 Years",
+        ]
+        .into_iter()
+        .for_each(|s| {
+            completions.insert(LedgerCompletion::PeriodSnippet(Snippet {
+                label: s.to_string(),
+                snippet: s.replace("$1", "N").to_string(),
+            }));
+        });
+
+        vec!["from $1", "since $1", "to $1", "until $1", "in $1"]
+            .into_iter()
+            .for_each(|s| {
+                completions.insert(LedgerCompletion::PeriodSnippet(Snippet {
+                    label: s.to_string(),
+                    snippet: s.replace("$1", "DATE").to_string(),
+                }));
+            });
+
+        completions.insert(LedgerCompletion::PeriodSnippet(Snippet {
+            label: "from $1 to $2".to_string(),
+            snippet: "from DATE to DATE".to_string(),
+        }));
     }
 
     pub fn diagnostics(buffer_path: &str, content: &str) -> Vec<Diagnostic> {
@@ -333,6 +369,7 @@ impl LedgerBackend {
             | LedgerCompletion::Directive(_)
             | LedgerCompletion::File(_)
             | LedgerCompletion::Period(_)
+            | LedgerCompletion::PeriodSnippet(_)
             | LedgerCompletion::Tag(_) => return None,
         }
 
@@ -461,6 +498,72 @@ fn test_completions() {
         Period(
             "Yearly",
         ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Days",
+                snippet: "Every N Days",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Months",
+                snippet: "Every N Months",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Quarters",
+                snippet: "Every N Quarters",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Weeks",
+                snippet: "Every N Weeks",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Years",
+                snippet: "Every N Years",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "from $1",
+                snippet: "from DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "from $1 to $2",
+                snippet: "from DATE to DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "in $1",
+                snippet: "in DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "since $1",
+                snippet: "since DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "to $1",
+                snippet: "to DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "until $1",
+                snippet: "until DATE",
+            },
+        ),
     ]
     "#
     );
@@ -557,6 +660,72 @@ fn test_completions_tags() {
         Period(
             "Yearly",
         ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Days",
+                snippet: "Every N Days",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Months",
+                snippet: "Every N Months",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Quarters",
+                snippet: "Every N Quarters",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Weeks",
+                snippet: "Every N Weeks",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Years",
+                snippet: "Every N Years",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "from $1",
+                snippet: "from DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "from $1 to $2",
+                snippet: "from DATE to DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "in $1",
+                snippet: "in DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "since $1",
+                snippet: "since DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "to $1",
+                snippet: "to DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "until $1",
+                snippet: "until DATE",
+            },
+        ),
         Tag(
             "Tag1",
         ),
@@ -651,6 +820,72 @@ fn test_completions_files() {
         ),
         Period(
             "Yearly",
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Days",
+                snippet: "Every N Days",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Months",
+                snippet: "Every N Months",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Quarters",
+                snippet: "Every N Quarters",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Weeks",
+                snippet: "Every N Weeks",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Years",
+                snippet: "Every N Years",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "from $1",
+                snippet: "from DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "from $1 to $2",
+                snippet: "from DATE to DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "in $1",
+                snippet: "in DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "since $1",
+                snippet: "since DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "to $1",
+                snippet: "to DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "until $1",
+                snippet: "until DATE",
+            },
         ),
     ]
     "#
@@ -749,6 +984,72 @@ fn test_completions_from_included_files() {
         ),
         Period(
             "Yearly",
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Days",
+                snippet: "Every N Days",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Months",
+                snippet: "Every N Months",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Quarters",
+                snippet: "Every N Quarters",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Weeks",
+                snippet: "Every N Weeks",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "Every $1 Years",
+                snippet: "Every N Years",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "from $1",
+                snippet: "from DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "from $1 to $2",
+                snippet: "from DATE to DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "in $1",
+                snippet: "in DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "since $1",
+                snippet: "since DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "to $1",
+                snippet: "to DATE",
+            },
+        ),
+        PeriodSnippet(
+            Snippet {
+                label: "until $1",
+                snippet: "until DATE",
+            },
         ),
     ]
     "#

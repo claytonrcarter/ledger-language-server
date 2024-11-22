@@ -46,6 +46,7 @@ fn dump_debug(kind: &str, completions: Vec<LedgerCompletion>, print_completions:
         LedgerCompletion::File(filename) => files.push(filename),
         LedgerCompletion::Payee(payee) => payees.push(payee),
         LedgerCompletion::Period(period) => periods.push(period),
+        LedgerCompletion::PeriodSnippet(period) => periods.push(&period.label),
         LedgerCompletion::Tag(tag) => tags.push(tag),
     });
     println!("[{kind}] {} accounts", accounts.len());

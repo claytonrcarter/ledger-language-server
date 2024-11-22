@@ -381,6 +381,13 @@ impl LanguageServer for Lsp {
                 LedgerCompletion::Period(period) if include.periods => Some(
                     CompletionItem::new_simple(period.clone(), "Period".to_string()),
                 ),
+                LedgerCompletion::PeriodSnippet(period) if include.periods => {
+                    let mut completion =
+                        CompletionItem::new_simple(period.label.clone(), "Period".to_string());
+                    completion.insert_text = Some(period.snippet.clone());
+                    completion.insert_text_format = Some(InsertTextFormat::SNIPPET);
+                    Some(completion)
+                }
                 LedgerCompletion::Tag(tag) if include.tags => {
                     Some(CompletionItem::new_simple(tag.clone(), "Tag".to_string()))
                 }
@@ -389,6 +396,7 @@ impl LanguageServer for Lsp {
                 | LedgerCompletion::File(_)
                 | LedgerCompletion::Payee(_)
                 | LedgerCompletion::Period(_)
+                | LedgerCompletion::PeriodSnippet(_)
                 | LedgerCompletion::Tag(_) => None,
             })
             .collect();
