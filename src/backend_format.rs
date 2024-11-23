@@ -1039,3 +1039,21 @@ fn format_sorted_transactions() {
         "#
     );
 }
+
+#[test]
+fn format_error_nodes() {
+    let source = textwrap::dedent(
+        r#"
+        include       foo.ledger
+        invalid_directive
+        "#,
+    );
+
+    insta::assert_snapshot!(
+        format(&source).unwrap(),
+        @r#"
+        include foo.ledger
+        invalid_directive
+        "#
+    );
+}

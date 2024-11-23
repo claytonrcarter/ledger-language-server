@@ -1,4 +1,4 @@
-use crate::backend::{LedgerBackend, LedgerCompletion};
+use crate::backend::{CompletionResult, LedgerBackend, LedgerCompletion};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -15,7 +15,6 @@ pub async fn run_server() {
         state: Mutex::new(LspState {
             backend: LedgerBackend::new(),
             sources: HashMap::new(),
-            completions: HashMap::new(),
         }),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
@@ -26,33 +25,11 @@ pub struct LspState {
 
     // see https://github.com/ebkalderon/nix-language-server/blob/master/src/backend.rs#L14-L23
     pub sources: HashMap<String, String>,
-    pub completions: HashMap<String, Vec<LedgerCompletion>>,
 }
 
 pub struct Lsp {
     pub client: Client,
     pub state: Mutex<LspState>,
-}
-
-impl LspState {
-    fn completion_with_edit(
-        &self,
-        mut completion: CompletionItem,
-        contents: &str,
-        candidate: &LedgerCompletion,
-        position: &Position,
-    ) -> Option<CompletionItem> {
-        if let Some(range) = self
-            .backend
-            .node_range_at_position(contents, candidate, position)
-        {
-            completion.text_edit = Some(CompletionTextEdit::Edit(TextEdit {
-                range,
-                new_text: completion.label.clone(),
-            }));
-        };
-        Some(completion)
-    }
 }
 
 macro_rules! log {
@@ -164,24 +141,6 @@ impl LanguageServer for Lsp {
         );
         state.backend.parse_document(&params.text_document.text);
 
-        let mut visited = HashSet::new();
-
-        state.backend.parse_document(&params.text_document.text);
-
-        match state.backend.completions(
-            params.text_document.uri.path(),
-            &params.text_document.text,
-            &mut visited,
-        ) {
-            Ok(completions) => state
-                .completions
-                .insert(params.text_document.uri.path().to_owned(), completions),
-            Err(err) => {
-                log!(self, ERROR, "{err}");
-                None
-            }
-        };
-
         self.client
             .publish_diagnostics(
                 params.text_document.uri.clone(),
@@ -233,22 +192,8 @@ impl LanguageServer for Lsp {
         // the file contents (params don't have access to updated buffer contents)
         // TODO figure out how to send TextDocumentSaveRegistrationOptions{include_text: Some(true)}
         // ... then we could update both
-        let mut state = self.state.lock().await;
+        let state = self.state.lock().await;
         if let Some(content) = state.sources.get(params.text_document.uri.path()).cloned() {
-            let mut visited = HashSet::new();
-            match state
-                .backend
-                .completions(params.text_document.uri.path(), &content, &mut visited)
-            {
-                Ok(completions) => state
-                    .completions
-                    .insert(params.text_document.uri.path().to_owned(), completions),
-                Err(err) => {
-                    log!(self, ERROR, "{err}");
-                    None
-                }
-            };
-
             self.client
                 .publish_diagnostics(
                     params.text_document.uri.clone(),
@@ -268,7 +213,7 @@ impl LanguageServer for Lsp {
         let start_time = std::time::Instant::now();
 
         // let contents = contents_of_path(params.text_document_position.text_document.uri.path());
-        let state = self.state.lock().await;
+        let mut state = self.state.lock().await;
         log!(
             self,
             "[completion] acquired lock @ {:?}",
@@ -279,132 +224,75 @@ impl LanguageServer for Lsp {
             Some(contents) => contents.clone(),
             None => return Ok(None),
         };
-        let completions = match state
-            .completions
-            .get(params.text_document_position.text_document.uri.path())
-        {
-            Some(completions) => completions,
-            None => return Ok(None),
-        };
 
-        #[derive(Default)]
-        struct CompletionsToInclude {
-            accounts: bool,
-            directives: bool,
-            files: bool,
-            payees: bool,
-            periods: bool,
-            tags: bool,
-        }
-
-        let include = {
-            let line = params.text_document_position.position.line as usize;
-            let line = contents.split('\n').nth(line).unwrap_or("");
-
-            match (line.chars().nth(0), line.trim().chars().nth(0)) {
-                // posting comment/note
-                (Some(char1), Some(';' | '#' | '%' | '|' | '*')) if char1.is_whitespace() => {
-                    CompletionsToInclude {
-                        tags: true,
-                        ..CompletionsToInclude::default()
-                    }
-                }
-
-                // posting account or subdirective
-                (Some(char1), _) if char1.is_whitespace() => CompletionsToInclude {
-                    accounts: true,
-                    directives: true,
-                    ..CompletionsToInclude::default()
-                },
-
-                // transaction date
-                (Some(char1), _) if char1.is_numeric() => CompletionsToInclude {
-                    payees: true,
-                    ..CompletionsToInclude::default()
-                },
-
-                // periodic transaction
-                (Some(char1), _) if char1 == '~' => CompletionsToInclude {
-                    periods: true,
-                    ..CompletionsToInclude::default()
-                },
-
-                // include directive
-                (Some('i'), _) if line.starts_with("include") => CompletionsToInclude {
-                    files: true,
-                    ..CompletionsToInclude::default()
-                },
-
-                (_, _) => CompletionsToInclude {
-                    directives: true,
-                    ..CompletionsToInclude::default()
-                },
+        let mut visited = HashSet::new();
+        let (range, completions) = match state.backend.completions_for_position(
+            pathname,
+            &contents,
+            &params.text_document_position.position,
+            &mut visited,
+        ) {
+            Ok(CompletionResult::Some { range, completions }) => (range, completions),
+            Ok(CompletionResult::None) => {
+                log!(
+                    self,
+                    INFO,
+                    "[completion] no completions for position {:?}",
+                    &params.text_document_position.position
+                );
+                return Ok(None);
+            }
+            Ok(CompletionResult::NoNode(report)) => {
+                log!(self, INFO, "[completion] {report}");
+                return Ok(None);
+            }
+            Err(err) => {
+                log!(self, ERROR, "[completion] {err}");
+                return Ok(None);
             }
         };
-        log!(
-            self,
-            "[completion] found location @ {:?}",
-            start_time.elapsed()
-        );
 
-        log!(
-            self,
-            "[completion] filtering {} completions",
-            completions.len()
-        );
-        // zed seems to do the right thing w/ most completions because they
-        // mostly contain "normal" code chars, but payees and accounts have
+        let create_completion = |label: &str, detail: &str| {
+            let mut completion = CompletionItem::new_simple(label.to_string(), detail.to_string());
+            completion.text_edit = Some(CompletionTextEdit::Edit(TextEdit {
+                range,
+                new_text: label.to_string(),
+            }));
+            completion
+        };
+
         let completions: Vec<CompletionItem> = completions
             .iter()
-            .filter_map(|i| match i {
+            .map(|i| match i {
                 // FIXME there is no need to recompute the range of the current node
                 // for each completion; it should be calculated once and reued
-                LedgerCompletion::Account(account) if include.accounts => state
-                    .completion_with_edit(
-                        CompletionItem::new_simple(account.clone(), "Account".to_string()),
-                        &contents,
-                        &i,
-                        &params.text_document_position.position,
-                    ),
-                LedgerCompletion::Directive(directive) if include.directives => Some(
-                    CompletionItem::new_simple(directive.clone(), "Directive".to_string()),
-                ),
-                LedgerCompletion::File(filename) if include.files => Some(
-                    CompletionItem::new_simple(filename.clone(), "File".to_string()),
-                ),
-                LedgerCompletion::Payee(payee) if include.payees => state.completion_with_edit(
-                    CompletionItem::new_simple(payee.clone(), "Payee".to_string()),
-                    &contents,
-                    &i,
-                    &params.text_document_position.position,
-                ),
-                LedgerCompletion::Period(period) if include.periods => Some(
-                    CompletionItem::new_simple(period.clone(), "Period".to_string()),
-                ),
-                LedgerCompletion::PeriodSnippet(period) if include.periods => {
+                LedgerCompletion::Account(account) => create_completion(&account, "Account"),
+
+                LedgerCompletion::Directive(directive) => {
+                    create_completion(&directive, "Directive")
+                }
+
+                LedgerCompletion::File(filename) => create_completion(&filename, "File"),
+
+                LedgerCompletion::Payee(payee) => create_completion(&payee, "Payee"),
+
+                LedgerCompletion::Period(period) => create_completion(&period, "Period"),
+
+                LedgerCompletion::PeriodSnippet(period) => {
                     let mut completion =
                         CompletionItem::new_simple(period.label.clone(), "Period".to_string());
                     completion.insert_text = Some(period.snippet.clone());
                     completion.insert_text_format = Some(InsertTextFormat::SNIPPET);
-                    Some(completion)
+                    completion.text_edit = Some(CompletionTextEdit::Edit(TextEdit {
+                        range,
+                        new_text: period.snippet.clone(),
+                    }));
+                    completion
                 }
-                LedgerCompletion::Tag(tag) if include.tags => {
-                    Some(CompletionItem::new_simple(tag.clone(), "Tag".to_string()))
-                }
-                LedgerCompletion::Account(_)
-                | LedgerCompletion::Directive(_)
-                | LedgerCompletion::File(_)
-                | LedgerCompletion::Payee(_)
-                | LedgerCompletion::Period(_)
-                | LedgerCompletion::PeriodSnippet(_)
-                | LedgerCompletion::Tag(_) => None,
+
+                LedgerCompletion::Tag(tag) => create_completion(&tag, "Tag"),
             })
             .collect();
-        log!(
-            self,
-            "[completion] filtered completions @ {:?}",
-            start_time.elapsed()
-        );
 
         log!(
             self,

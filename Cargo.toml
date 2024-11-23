@@ -7,6 +7,7 @@ edition = "2021"
 cc = "*"
 
 [dependencies]
+anyhow = "1.0.93"
 log = "0.4.21"
 regex = "1.10.4"
 serde = { version = "1", features = ["serde_derive"] }

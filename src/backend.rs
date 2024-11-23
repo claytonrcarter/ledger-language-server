@@ -1,7 +1,9 @@
+use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use tower_lsp::lsp_types::Range as LspRange;
 use tower_lsp::lsp_types::*;
-use tree_sitter::{Language, Parser, Point, Tree};
+use tree_sitter::{Language, Node, Parser, Point, Tree};
 use type_sitter::StreamingIterator;
 use walkdir::WalkDir;
 
@@ -11,6 +13,42 @@ fn substring(source: &[u8], start_byte: usize, end_byte: usize) -> String {
     std::str::from_utf8(&source[start_byte..end_byte.min(source.len())])
         .expect("converting bytes back to text")
         .to_string()
+}
+
+fn word_boundary_range(line: &str, index: usize, addl_end_char: Option<char>) -> (usize, usize) {
+    let start_boundary = vec![' ', '\t'];
+    let end_boundary = addl_end_char.map_or_else(
+        || start_boundary.clone(),
+        |c| {
+            let mut chars = start_boundary.clone();
+            chars.push(c);
+            chars
+        },
+    );
+    if let Some((before_point, after_point)) = line.split_at_checked(index) {
+        let start_offset = before_point
+            .rfind(start_boundary.as_slice())
+            .map_or_else(|| before_point.len(), |i| i + 1);
+        let end_offset = after_point
+            .find(end_boundary.as_slice())
+            .unwrap_or_else(|| after_point.len());
+
+        // dbg!(line, index, start_offset, end_offset, index + end_offset);
+
+        (start_offset, index + end_offset)
+    } else {
+        (index, index)
+    }
+}
+
+#[derive(Debug)]
+pub enum CompletionResult {
+    Some {
+        range: LspRange,
+        completions: Vec<LedgerCompletion>,
+    },
+    None,
+    NoNode(String),
 }
 
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -67,20 +105,167 @@ impl LedgerBackend {
         }
     }
 
-    pub fn completions(
+    pub fn completions_for_position(
         &mut self,
         buffer_path: &str,
         content: &str,
+        position: &Position,
         visited: &mut HashSet<String>,
-    ) -> Result<Vec<LedgerCompletion>, String> {
+    ) -> Result<CompletionResult> {
         let mut completions = HashSet::new();
 
+        let node = match self.node_at_position(content, position) {
+            Some(node) => node,
+            None => {
+                dbg!(content);
+                dbg!(position);
+                return Ok(CompletionResult::NoNode(format!(
+                    "No node found at position {position:?}"
+                )));
+            }
+        };
+        let mut range = node.range();
+
+        let line_content = content.lines().nth(position.line as usize).unwrap_or("");
+
+        // dbg!(position, node.kind(), node.range());
+        match node.kind() {
+            "account" => self.populate_completions(
+                &mut completions,
+                buffer_path,
+                "(account) @account",
+                content,
+                &|account| Some(LedgerCompletion::Account(account)),
+                visited,
+            )?,
+
+            "filename" => self.completions_insert_project_files(&mut completions, buffer_path)?,
+            // we may be at the end of the include directive line
+            "word_directive"
+                if node.range().end_point.column == position.character as usize
+                    && node
+                        .named_child(0)
+                        .map_or(false, |child| child.kind() == "filename") =>
+            {
+                range = node.named_child(0).unwrap().range();
+                self.completions_insert_project_files(&mut completions, buffer_path)?
+            }
+
+            "interval" => {
+                let (start, end) =
+                    word_boundary_range(line_content, position.character as usize, None);
+                range.start_point.column = start;
+                range.end_point.row = range.start_point.row;
+                range.end_point.column = end;
+
+                self.completions_insert_periods(&mut completions)
+            }
+            // (ERROR) w/ leading ~ => no interval or postings yet
+            "ERROR" if line_content.starts_with("~") => {
+                let (start, end) =
+                    word_boundary_range(line_content, position.character as usize, None);
+                range.start_point.column = start;
+                range.end_point.row = range.start_point.row;
+                range.end_point.column = end;
+
+                self.completions_insert_periods(&mut completions)
+            }
+
+            "payee" => self.populate_completions(
+                &mut completions,
+                buffer_path,
+                "(payee) @payee",
+                content,
+                &|payee| Some(LedgerCompletion::Payee(payee)),
+                visited,
+            )?,
+
+            // complete tags only for notes that are indented (ie for postings)
+            "note" if range.start_point.column != 0 => {
+                let (start, end) =
+                    word_boundary_range(line_content, position.character as usize, Some(':'));
+                range.start_point.column = start;
+                range.end_point.row = range.start_point.row;
+                range.end_point.column = end;
+
+                self.populate_completions(
+                    &mut completions,
+                    buffer_path,
+                    "(note) @note",
+                    content,
+                    &|note| {
+                        match note
+                            // https://ledger-cli.org/doc/ledger3.html#Commenting-on-your-Journal
+                            .trim_start_matches([' ', '\t', ';', '#', '%', '|', '*'])
+                            .split_once(": ")
+                        {
+                            Some((tag, _)) if !tag.contains(' ') => {
+                                Some(LedgerCompletion::Tag(tag.to_owned()))
+                            }
+                            Some(_) | None => None,
+                        }
+                    },
+                    visited,
+                )?
+            }
+
+            // TODO subdirectives
+            // if the error starts at the start of the line, maybe we're in the
+            // middle of typing a directive
+            "word_directive" => self.completions_insert_directives(&mut completions),
+
+            "ERROR" if node.range().start_point.column == 0 => {
+                self.completions_insert_directives(&mut completions)
+            }
+
+            // if we're at the start of an "empty" line
+            "source_file" if position.character == 0 => {
+                self.completions_insert_directives(&mut completions)
+            }
+
+            _ => return Ok(CompletionResult::None),
+        };
+
+        // remove trailing newline from range to replace
+        if range.end_point.column == 0 && range.start_point.row != range.end_point.row {
+            range.end_byte -= 1;
+            range.end_point.row -= 1;
+            range.end_point.column = content.lines().nth(range.end_point.row).unwrap_or("").len();
+        }
+
+        Ok(CompletionResult::Some {
+            range: LspRange {
+                start: Position {
+                    line: range.start_point.row as u32,
+                    character: range.start_point.column as u32,
+                },
+                end: Position {
+                    line: range.end_point.row as u32,
+                    character: range.end_point.column as u32,
+                },
+            },
+            completions: completions.into_iter().collect(),
+        })
+    }
+
+    pub fn populate_completions<F>(
+        &mut self,
+        completions: &mut HashSet<LedgerCompletion>,
+        buffer_path: &str,
+        query: &str,
+        content: &str,
+        completion_fn: &F,
+        visited: &mut HashSet<String>,
+    ) -> Result<()>
+    where
+        F: Fn(String) -> Option<LedgerCompletion>,
+    {
         let current_dir = match Path::new(buffer_path).parent() {
             Some(dir) => dir,
             None => {
                 // TODO ??
-                return Err(format!(
-                    "[diagnostics] Buffer has no parent dir? {buffer_path}"
+                return Err(anyhow::anyhow!(
+                    "[completions] Buffer has no parent dir? {buffer_path}"
                 ));
             }
         };
@@ -88,92 +273,41 @@ impl LedgerBackend {
         // "is empty" is a proxy for "this is the first call" to completions,
         // not a recursive call to included files
         if visited.is_empty() {
-            self.completions_insert_directives(&mut completions);
-            self.completions_insert_periods(&mut completions);
-
-            // only crawl files once, from the dir containing the buffer
-            let project_files = self._test_project_files.clone().unwrap_or_else(|| {
-                WalkDir::new(current_dir)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        e.file_name()
-                            .to_str()
-                            .is_some_and(|f| f.ends_with(".ledger"))
-                    })
-                    .map(|f| {
-                        f.path()
-                            .strip_prefix(current_dir)
-                            .unwrap_or_else(|_err| f.path())
-                            .as_os_str()
-                            .to_string_lossy()
-                            .to_string()
-                    })
-                    .collect()
-            });
-
-            project_files.into_iter().for_each(|f| {
-                if f.ends_with(".ledger") {
-                    completions.insert(LedgerCompletion::File(f.clone()));
-                }
-            });
+            // self.completions_insert_directives(&mut completions);
+            // self.completions_insert_periods(&mut completions);
         }
 
         let tree = match self.trees_cache.get(content) {
             Some(tree) => tree.clone(),
             None => {
-                return Err(format!(
+                // self.parse_document(content);
+                // self.trees_cache.get(content).unwrap().clone()
+                return Err(anyhow::anyhow!(
                     "no tree found for contents of file '{buffer_path}'"
-                ))
+                ));
             }
         };
 
-        let query = tree_sitter::Query::new(
+        let ts_query = tree_sitter::Query::new(
             &self.parser().language().unwrap(),
-            "(payee) @payee (account) @account (note) @note (filename) @filename",
+            format!("{query} (filename) @filename").as_str(),
         )
         .expect("creating tree-sitter query");
         let mut cursor = tree_sitter::QueryCursor::new();
 
         let source = content.as_bytes();
-        let mut matches = cursor.matches(&query, tree.root_node(), source);
+        let mut matches = cursor.matches(&ts_query, tree.root_node(), source);
         while let Some(m) = matches.next() {
-            // (payee) @payee
+            // query as passed in
             for n in m.nodes_for_capture_index(0) {
-                let payee = substring(source, n.start_byte(), n.end_byte());
-                completions.insert(LedgerCompletion::Payee(payee));
-            }
-
-            // (account) @account
-            for n in m.nodes_for_capture_index(1) {
-                let account = substring(source, n.start_byte(), n.end_byte());
-                std::str::from_utf8(&source[n.start_byte()..n.end_byte().min(source.len())])
-                    .expect("converting bytes back to text")
-                    .to_string();
-                completions.insert(LedgerCompletion::Account(account));
-            }
-
-            // (note) @note
-            for n in m.nodes_for_capture_index(2) {
-                let note = substring(source, n.start_byte(), n.end_byte());
-                note.split('\n')
-                    .filter_map(|l| {
-                        match l
-                            // https://ledger-cli.org/doc/ledger3.html#Commenting-on-your-Journal
-                            .trim_start_matches([' ', '\t', ';', '#', '%', '|', '*'])
-                            .split_once(": ")
-                        {
-                            Some((tag, _)) if !tag.contains(' ') => Some(tag.to_owned()),
-                            Some(_) | None => None,
-                        }
-                    })
-                    .for_each(|tag| {
-                        completions.insert(LedgerCompletion::Tag(tag));
-                    });
+                let capture_text = substring(source, n.start_byte(), n.end_byte());
+                if let Some(completion) = completion_fn(capture_text) {
+                    completions.insert(completion);
+                }
             }
 
             // (filename) @filename
-            for n in m.nodes_for_capture_index(3) {
+            for n in m.nodes_for_capture_index(1) {
                 let filename = substring(source, n.start_byte(), n.end_byte());
 
                 let path = Path::new(&filename);
@@ -195,18 +329,64 @@ impl LedgerBackend {
                     |content| Ok(content.to_string()),
                 )?;
 
-                self.completions(filename, &included_content, visited)
-                    // ignore errors for included files; surface those via
-                    // diagnostics instead
-                    .unwrap_or_default()
-                    .into_iter()
-                    .for_each(|c| {
-                        completions.insert(c);
-                    })
+                self.parse_document(&included_content);
+
+                self.populate_completions(
+                    completions,
+                    filename,
+                    query,
+                    &included_content,
+                    completion_fn,
+                    visited,
+                )?;
             }
         }
 
-        Ok(completions.into_iter().collect())
+        Ok(())
+    }
+
+    fn completions_insert_project_files(
+        &self,
+        completions: &mut HashSet<LedgerCompletion>,
+        buffer_path: &str,
+    ) -> Result<()> {
+        let current_dir = match Path::new(buffer_path).parent() {
+            Some(dir) => dir,
+            None => {
+                // TODO ??
+                return Err(anyhow::anyhow!(
+                    "[completions] Buffer has no parent dir? {buffer_path}"
+                ));
+            }
+        };
+
+        let project_files = self._test_project_files.clone().unwrap_or_else(|| {
+            WalkDir::new(current_dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.file_name()
+                        .to_str()
+                        .is_some_and(|f| f.ends_with(".ledger"))
+                })
+                .map(|f| {
+                    f.path()
+                        .strip_prefix(current_dir)
+                        .unwrap_or_else(|_err| f.path())
+                        .as_os_str()
+                        .to_string_lossy()
+                        .to_string()
+                })
+                .collect()
+        });
+
+        project_files.into_iter().for_each(|f| {
+            if f.ends_with(".ledger") {
+                completions.insert(LedgerCompletion::File(f.clone()));
+            }
+        });
+
+        Ok(())
     }
 
     fn completions_insert_directives(&self, completions: &mut HashSet<LedgerCompletion>) {
@@ -259,8 +439,8 @@ impl LedgerBackend {
         .into_iter()
         .for_each(|s| {
             completions.insert(LedgerCompletion::PeriodSnippet(Snippet {
-                label: s.to_string(),
-                snippet: s.replace("$1", "N").to_string(),
+                label: s.replace("$1", "N"),
+                snippet: s.to_string(),
             }));
         });
 
@@ -268,14 +448,14 @@ impl LedgerBackend {
             .into_iter()
             .for_each(|s| {
                 completions.insert(LedgerCompletion::PeriodSnippet(Snippet {
-                    label: s.to_string(),
-                    snippet: s.replace("$1", "DATE").to_string(),
+                    label: s.replace("$1", "DATE"),
+                    snippet: s.to_string(),
                 }));
             });
 
         completions.insert(LedgerCompletion::PeriodSnippet(Snippet {
-            label: "from $1 to $2".to_string(),
-            snippet: "from DATE to DATE".to_string(),
+            label: "from DATE to DATE".to_string(),
+            snippet: "from $1 to $2".to_string(),
         }));
     }
 
@@ -297,7 +477,7 @@ impl LedgerBackend {
 
                 Some((
                     path,
-                    Range {
+                    LspRange {
                         start: Position {
                             line: i as u32,
                             character: path_start_offset,
@@ -332,13 +512,11 @@ impl LedgerBackend {
         backend_format::format(content).map_err(|_err| "TODO convert io::Error to ???".to_string())
     }
 
-    pub fn node_range_at_position(
-        &self,
-        content: &str,
-        kind: &LedgerCompletion,
-        position: &Position,
-    ) -> Option<Range> {
+    /// Get the smallest named node at the given position.
+    fn node_at_position(&mut self, content: &str, position: &Position) -> Option<Node> {
+        let debug = false;
         let tree = self.trees_cache.get(content)?;
+        let content_line = content.lines().nth(position.line as usize).unwrap_or("");
 
         let point = Point {
             row: position.line as usize,
@@ -349,867 +527,996 @@ impl LedgerBackend {
         // descend to smallest node @ point
         while cursor.goto_first_child_for_point(point).is_some() {}
 
+        if debug {
+            eprintln!(
+                "bottomed out at {}{} node '{}' {:?}-{:?}",
+                if cursor.node().is_named() {
+                    "named"
+                } else {
+                    "anon"
+                },
+                if cursor.node().is_error() {
+                    " error"
+                } else {
+                    ""
+                },
+                cursor.node().kind(),
+                cursor.node().range().start_point,
+                cursor.node().range().end_point
+            );
+        }
+
         // seek to first named node; if the current (unnamed) node starts at
         // point, then the point/cursor could be at the "end" of the previous
         // node
         while !cursor.node().is_named() {
             if cursor.node().range().start_point == point {
-                cursor.goto_previous_sibling();
+                if !cursor.goto_previous_sibling() {
+                    cursor.goto_parent();
+                }
             } else {
                 cursor.goto_parent();
             }
+
+            // if current node is an error at end of line, maybe we're building
+            // a line that happens to be invalid temporarily; try checking the
+            // previous node
+            if cursor.node().is_error()
+                && cursor.node().range().end_point.column == content_line.len()
+            {
+                cursor.goto_previous_sibling();
+            }
         }
 
-        let node_kind = cursor.node().kind();
-        match kind {
-            LedgerCompletion::Account(_) if node_kind == "account" => {}
-            LedgerCompletion::Payee(_) if node_kind == "payee" => {}
-            LedgerCompletion::Account(_)
-            | LedgerCompletion::Payee(_)
-            | LedgerCompletion::Directive(_)
-            | LedgerCompletion::File(_)
-            | LedgerCompletion::Period(_)
-            | LedgerCompletion::PeriodSnippet(_)
-            | LedgerCompletion::Tag(_) => return None,
+        if debug {
+            eprintln!(
+                "ended up at {}{} node '{}' {:?}-{:?}",
+                if cursor.node().is_named() {
+                    "named"
+                } else {
+                    "anon"
+                },
+                if cursor.node().is_error() {
+                    " error"
+                } else {
+                    ""
+                },
+                cursor.node().kind(),
+                cursor.node().range().start_point,
+                cursor.node().range().end_point
+            );
         }
 
-        let range = cursor.node().range();
-        Some(Range {
-            start: Position {
-                line: range.start_point.row as u32,
-                character: range.start_point.column as u32,
-            },
-            end: Position {
-                line: range.end_point.row as u32,
-                character: range.end_point.column as u32,
-            },
-        })
+        Some(cursor.node())
     }
 }
 
-#[test]
-fn test_completions() {
-    let source = textwrap::dedent(
-        "
-    24/01/02 Payee1
-        Account1  $1
-        Account2
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    24/02/03 Payee2
-        Account2  $2
-        Account3
+    #[test]
+    fn test_completions_payees() {
+        let source = textwrap::dedent(
+            "
+            24/01/02 Payee1
+                Account
 
-    24/02/03 Mom & Dad
-        One & Two  $2
-        Three & Four
-    ",
-    );
+            24/02/03 Payee2
+                Account
 
-    let mut be = LedgerBackend::new();
-    be._test_project_files = Some(vec![]);
-    be.parse_document(&source);
+            24/02/03 Mom & Dad
+                Account
+            ",
+        );
 
-    let mut visited = HashSet::new();
-    let mut completions = be
-        .completions("unused in test", &source, &mut visited)
-        .unwrap();
-    completions.sort();
-    insta::assert_debug_snapshot!(completions,
-    @r#"
-    [
-        Account(
-            "Account1",
-        ),
-        Account(
-            "Account2",
-        ),
-        Account(
-            "Account3",
-        ),
-        Account(
-            "One & Two",
-        ),
-        Account(
-            "Three & Four",
-        ),
-        Directive(
-            "account",
-        ),
-        Directive(
-            "alias",
-        ),
-        Directive(
-            "commodity",
-        ),
-        Directive(
-            "include",
-        ),
-        Directive(
-            "payee",
-        ),
-        Directive(
-            "tag",
-        ),
-        Directive(
-            "year",
-        ),
-        Payee(
-            "Mom & Dad",
-        ),
-        Payee(
-            "Payee1",
-        ),
-        Payee(
-            "Payee2",
-        ),
-        Period(
-            "Bimonthly",
-        ),
-        Period(
-            "Biweekly",
-        ),
-        Period(
-            "Daily",
-        ),
-        Period(
-            "Every Day",
-        ),
-        Period(
-            "Every Month",
-        ),
-        Period(
-            "Every Quarter",
-        ),
-        Period(
-            "Every Week",
-        ),
-        Period(
-            "Every Year",
-        ),
-        Period(
-            "Monthly",
-        ),
-        Period(
-            "Quarterly",
-        ),
-        Period(
-            "Weekly",
-        ),
-        Period(
-            "Yearly",
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Days",
-                snippet: "Every N Days",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Months",
-                snippet: "Every N Months",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Quarters",
-                snippet: "Every N Quarters",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Weeks",
-                snippet: "Every N Weeks",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Years",
-                snippet: "Every N Years",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "from $1",
-                snippet: "from DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "from $1 to $2",
-                snippet: "from DATE to DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "in $1",
-                snippet: "in DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "since $1",
-                snippet: "since DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "to $1",
-                snippet: "to DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "until $1",
-                snippet: "until DATE",
-            },
-        ),
-    ]
-    "#
-    );
-}
-
-#[test]
-fn test_completions_tags() {
-    let source = textwrap::dedent(
-        "
-    24/01/02 Payee1
-        ; Tag1: foo
-        ; Tag2: bar
-        Account1  $1
-        Account2
-    ",
-    );
-
-    let mut be = LedgerBackend::new();
-    be._test_project_files = Some(vec![]);
-    be.parse_document(&source);
-
-    let mut visited = HashSet::new();
-
-    let mut completions = be
-        .completions("unused in test", &source, &mut visited)
-        .unwrap();
-    completions.sort();
-    insta::assert_debug_snapshot!(completions,
-    @r#"
-    [
-        Account(
-            "Account1",
-        ),
-        Account(
-            "Account2",
-        ),
-        Directive(
-            "account",
-        ),
-        Directive(
-            "alias",
-        ),
-        Directive(
-            "commodity",
-        ),
-        Directive(
-            "include",
-        ),
-        Directive(
-            "payee",
-        ),
-        Directive(
-            "tag",
-        ),
-        Directive(
-            "year",
-        ),
-        Payee(
-            "Payee1",
-        ),
-        Period(
-            "Bimonthly",
-        ),
-        Period(
-            "Biweekly",
-        ),
-        Period(
-            "Daily",
-        ),
-        Period(
-            "Every Day",
-        ),
-        Period(
-            "Every Month",
-        ),
-        Period(
-            "Every Quarter",
-        ),
-        Period(
-            "Every Week",
-        ),
-        Period(
-            "Every Year",
-        ),
-        Period(
-            "Monthly",
-        ),
-        Period(
-            "Quarterly",
-        ),
-        Period(
-            "Weekly",
-        ),
-        Period(
-            "Yearly",
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Days",
-                snippet: "Every N Days",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Months",
-                snippet: "Every N Months",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Quarters",
-                snippet: "Every N Quarters",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Weeks",
-                snippet: "Every N Weeks",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Years",
-                snippet: "Every N Years",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "from $1",
-                snippet: "from DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "from $1 to $2",
-                snippet: "from DATE to DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "in $1",
-                snippet: "in DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "since $1",
-                snippet: "since DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "to $1",
-                snippet: "to DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "until $1",
-                snippet: "until DATE",
-            },
-        ),
-        Tag(
-            "Tag1",
-        ),
-        Tag(
-            "Tag2",
-        ),
-    ]
-    "#
-    );
-}
-
-#[test]
-fn test_completions_files() {
-    let source = "";
-
-    let mut be = LedgerBackend::new();
-    be._test_project_files = Some(
-        vec!["foo.ledger", "bar.yaml", "baz/qux.ledger"]
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect(),
-    );
-    be.parse_document(source);
-
-    let mut visited = HashSet::new();
-    let mut completions = be
-        .completions("unused in test", source, &mut visited)
-        .unwrap();
-    completions.sort();
-    insta::assert_debug_snapshot!(completions,
-    @r#"
-    [
-        Directive(
-            "account",
-        ),
-        Directive(
-            "alias",
-        ),
-        Directive(
-            "commodity",
-        ),
-        Directive(
-            "include",
-        ),
-        Directive(
-            "payee",
-        ),
-        Directive(
-            "tag",
-        ),
-        Directive(
-            "year",
-        ),
-        File(
-            "baz/qux.ledger",
-        ),
-        File(
-            "foo.ledger",
-        ),
-        Period(
-            "Bimonthly",
-        ),
-        Period(
-            "Biweekly",
-        ),
-        Period(
-            "Daily",
-        ),
-        Period(
-            "Every Day",
-        ),
-        Period(
-            "Every Month",
-        ),
-        Period(
-            "Every Quarter",
-        ),
-        Period(
-            "Every Week",
-        ),
-        Period(
-            "Every Year",
-        ),
-        Period(
-            "Monthly",
-        ),
-        Period(
-            "Quarterly",
-        ),
-        Period(
-            "Weekly",
-        ),
-        Period(
-            "Yearly",
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Days",
-                snippet: "Every N Days",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Months",
-                snippet: "Every N Months",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Quarters",
-                snippet: "Every N Quarters",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Weeks",
-                snippet: "Every N Weeks",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Years",
-                snippet: "Every N Years",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "from $1",
-                snippet: "from DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "from $1 to $2",
-                snippet: "from DATE to DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "in $1",
-                snippet: "in DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "since $1",
-                snippet: "since DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "to $1",
-                snippet: "to DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "until $1",
-                snippet: "until DATE",
-            },
-        ),
-    ]
-    "#
-    );
-}
-
-#[test]
-fn test_completions_from_included_files() {
-    let source = "include foo.ledger";
-    let included = textwrap::dedent(
-        "
-        24/01/02 Payee1
-            Account1  $1
-            Account2
-        ",
-    );
-
-    let mut be = LedgerBackend::new();
-    be._test_included_content = Some(included.clone());
-    be._test_project_files = Some(vec![]);
-    be.parse_document(source);
-    be.parse_document(&included);
-
-    let mut visited = HashSet::new();
-
-    let mut completions = be
-        .completions("unused in test", &source, &mut visited)
-        .unwrap();
-
-    completions.sort();
-    insta::assert_debug_snapshot!(completions,
-    @r#"
-    [
-        Account(
-            "Account1",
-        ),
-        Account(
-            "Account2",
-        ),
-        Directive(
-            "account",
-        ),
-        Directive(
-            "alias",
-        ),
-        Directive(
-            "commodity",
-        ),
-        Directive(
-            "include",
-        ),
-        Directive(
-            "payee",
-        ),
-        Directive(
-            "tag",
-        ),
-        Directive(
-            "year",
-        ),
-        Payee(
-            "Payee1",
-        ),
-        Period(
-            "Bimonthly",
-        ),
-        Period(
-            "Biweekly",
-        ),
-        Period(
-            "Daily",
-        ),
-        Period(
-            "Every Day",
-        ),
-        Period(
-            "Every Month",
-        ),
-        Period(
-            "Every Quarter",
-        ),
-        Period(
-            "Every Week",
-        ),
-        Period(
-            "Every Year",
-        ),
-        Period(
-            "Monthly",
-        ),
-        Period(
-            "Quarterly",
-        ),
-        Period(
-            "Weekly",
-        ),
-        Period(
-            "Yearly",
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Days",
-                snippet: "Every N Days",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Months",
-                snippet: "Every N Months",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Quarters",
-                snippet: "Every N Quarters",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Weeks",
-                snippet: "Every N Weeks",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "Every $1 Years",
-                snippet: "Every N Years",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "from $1",
-                snippet: "from DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "from $1 to $2",
-                snippet: "from DATE to DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "in $1",
-                snippet: "in DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "since $1",
-                snippet: "since DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "to $1",
-                snippet: "to DATE",
-            },
-        ),
-        PeriodSnippet(
-            Snippet {
-                label: "until $1",
-                snippet: "until DATE",
-            },
-        ),
-    ]
-    "#
-    );
-}
-
-#[test]
-fn test_formatting() {
-    let source = textwrap::dedent(
-        "
-        2023/09/28 (743) Check Withdrawal
-              ; Memo: CHK#743
-            SVFCU:Personal   $-160.00
-            SVFCU:Personal   $-16.00
-            Expenses:Uncategorized
-    ",
-    );
-
-    insta::assert_snapshot!(LedgerBackend::format(&source).unwrap(),
-    @r"
-    2023/09/28 (743) Check Withdrawal
-        ; Memo: CHK#743
-        SVFCU:Personal                          $-160.00
-        SVFCU:Personal                           $-16.00
-        Expenses:Uncategorized
-
-    ",
-    );
-}
-
-#[test]
-fn test_account_range() {
-    let source = textwrap::dedent(
-        "
-        2023/09/28 Foo
-            Bar   $-160.00
-            Qux:Fiz:Wi
-    ",
-    );
-    let mut be = LedgerBackend::new();
-    be.parse_document(&source);
-
-    // between ar in Bar
-    // FIXME this does not work if placed at end of Bar, it matches to the
-    // spaces between account and amount ... is that OK?
-    let range = be.node_range_at_position(
-        &source,
-        &LedgerCompletion::Account(String::new()),
-        &Position {
-            line: 2,
-            character: 7,
-        },
-    );
-    insta::assert_debug_snapshot!(range,
-    @r"
-    Some(
-        Range {
-            start: Position {
-                line: 2,
-                character: 4,
-            },
-            end: Position {
-                line: 2,
-                character: 7,
-            },
-        },
-    )
-    ",
-    );
-
-    // end of Qux
-    let range = be.node_range_at_position(
-        &source,
-        &LedgerCompletion::Account(String::new()),
-        &Position {
-            line: 3,
-            character: 7,
-        },
-    );
-    insta::assert_debug_snapshot!(range,
-    @r"
-    Some(
-        Range {
-            start: Position {
-                line: 3,
-                character: 4,
-            },
-            end: Position {
-                line: 3,
-                character: 14,
-            },
-        },
-    )
-    ",
-    );
-
-    // end of Wi
-    let range = be.node_range_at_position(
-        &source,
-        &LedgerCompletion::Account(String::new()),
-        &Position {
-            line: 3,
-            character: 14,
-        },
-    );
-    insta::assert_debug_snapshot!(range,
-    @r"
-    Some(
-        Range {
-            start: Position {
-                line: 3,
-                character: 4,
-            },
-            end: Position {
-                line: 3,
-                character: 14,
-            },
-        },
-    )
-    ",
-    );
-
-    // middle of Foo (payee, not account)
-    let range = be.node_range_at_position(
-        &source,
-        &LedgerCompletion::Account(String::new()),
-        &Position {
-            line: 1,
-            character: 12,
-        },
-    );
-    insta::assert_debug_snapshot!(range,
-    @r"
-    None
-    ",
-    );
-
-    // middle of Foo (payee)
-    let range = be.node_range_at_position(
-        &source,
-        &LedgerCompletion::Payee(String::new()),
-        &Position {
-            line: 1,
-            character: 12,
-        },
-    );
-    insta::assert_debug_snapshot!(range,
-    @r"
-    Some(
-        Range {
-            start: Position {
+        let completions = get_completions(
+            &source,
+            &Position {
                 line: 1,
+                character: 10,
+            },
+            None,
+        );
+
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 1,
+                    character: 9,
+                },
+                end: Position {
+                    line: 1,
+                    character: 15,
+                },
+            },
+            [
+                Payee(
+                    "Mom & Dad",
+                ),
+                Payee(
+                    "Payee1",
+                ),
+                Payee(
+                    "Payee2",
+                ),
+            ],
+        )
+        "#
+        );
+    }
+
+    #[test]
+    fn test_completions_accounts() {
+        let source = textwrap::dedent(
+            "
+            24/01/02 Payee1
+                Account1  $1
+                Account2
+
+            24/02/03 Payee2
+                Account2  $2
+                Account3
+
+            24/02/03 Mom & Dad
+                One & Two  $2
+                Three & Four
+            ",
+        );
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 2,
+                character: 10,
+            },
+            None,
+        );
+
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 2,
+                    character: 4,
+                },
+                end: Position {
+                    line: 2,
+                    character: 12,
+                },
+            },
+            [
+                Account(
+                    "Account1",
+                ),
+                Account(
+                    "Account2",
+                ),
+                Account(
+                    "Account3",
+                ),
+                Account(
+                    "One & Two",
+                ),
+                Account(
+                    "Three & Four",
+                ),
+            ],
+        )
+        "#
+        );
+    }
+
+    #[test]
+    fn test_completions_periods() {
+        let source = vec!["~ ", ""].join("\n");
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 0,
+                character: 2,
+            },
+            None,
+        );
+
+        insta::assert_debug_snapshot!(completions.1,
+        @r#"
+        [
+            Period(
+                "Bimonthly",
+            ),
+            Period(
+                "Biweekly",
+            ),
+            Period(
+                "Daily",
+            ),
+            Period(
+                "Every Day",
+            ),
+            Period(
+                "Every Month",
+            ),
+            Period(
+                "Every Quarter",
+            ),
+            Period(
+                "Every Week",
+            ),
+            Period(
+                "Every Year",
+            ),
+            Period(
+                "Monthly",
+            ),
+            Period(
+                "Quarterly",
+            ),
+            Period(
+                "Weekly",
+            ),
+            Period(
+                "Yearly",
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "Every N Days",
+                    snippet: "Every $1 Days",
+                },
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "Every N Months",
+                    snippet: "Every $1 Months",
+                },
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "Every N Quarters",
+                    snippet: "Every $1 Quarters",
+                },
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "Every N Weeks",
+                    snippet: "Every $1 Weeks",
+                },
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "Every N Years",
+                    snippet: "Every $1 Years",
+                },
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "from DATE",
+                    snippet: "from $1",
+                },
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "from DATE to DATE",
+                    snippet: "from $1 to $2",
+                },
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "in DATE",
+                    snippet: "in $1",
+                },
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "since DATE",
+                    snippet: "since $1",
+                },
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "to DATE",
+                    snippet: "to $1",
+                },
+            ),
+            PeriodSnippet(
+                Snippet {
+                    label: "until DATE",
+                    snippet: "until $1",
+                },
+            ),
+        ]
+        "#
+        );
+    }
+
+    #[test]
+    fn test_completions_periods_empty_xact() {
+        let source = vec!["~ ", ""].join("\n");
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 0,
+                character: 2,
+            },
+            None,
+        );
+
+        insta::assert_debug_snapshot!(completions.0,
+        @r#"
+        Range {
+            start: Position {
+                line: 0,
+                character: 2,
+            },
+            end: Position {
+                line: 0,
+                character: 2,
+            },
+        }
+        "#
+        );
+        assert!(completions.1.len() > 0);
+        if let LedgerCompletion::Period(_) = completions.1[0] {
+            assert!(true);
+        } else {
+            panic!("completions do not include periods");
+        }
+    }
+
+    #[test]
+    fn test_completions_periods_adding_to_valid_interval() {
+        let source = vec!["~ weekly ", ""].join("\n");
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 0,
+                character: 9,
+            },
+            None,
+        );
+
+        insta::assert_debug_snapshot!(completions.0,
+        @r#"
+        Range {
+            start: Position {
+                line: 0,
+                character: 9,
+            },
+            end: Position {
+                line: 0,
+                character: 9,
+            },
+        }
+        "#
+        );
+        assert!(completions.1.len() > 0);
+        if let LedgerCompletion::Period(_) = completions.1[0] {
+            assert!(true);
+        } else {
+            panic!("completions do not include periods");
+        }
+    }
+
+    #[test]
+    fn test_completions_periods_changing_interval_word() {
+        let source = vec!["~ weekly from ", ""].join("\n");
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 0,
                 character: 11,
             },
+            None,
+        );
+
+        insta::assert_debug_snapshot!(completions.0,
+        @r#"
+        Range {
+            start: Position {
+                line: 0,
+                character: 9,
+            },
+            end: Position {
+                line: 0,
+                character: 13,
+            },
+        }
+        "#
+        );
+        assert!(completions.1.len() > 0);
+        if let LedgerCompletion::Period(_) = completions.1[0] {
+            assert!(true);
+        } else {
+            panic!("completions do not include periods");
+        }
+    }
+
+    #[test]
+    fn test_completions_periods_partial_xact() {
+        let source = textwrap::dedent(
+            "
+            ~ Ev
+                Account
+            ",
+        );
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 1,
+                character: 3,
+            },
+            None,
+        );
+
+        insta::assert_debug_snapshot!(completions.0,
+        @r#"
+        Range {
+            start: Position {
+                line: 1,
+                character: 2,
+            },
             end: Position {
                 line: 1,
-                character: 14,
+                character: 4,
             },
-        },
-    )
-    ",
-    );
+        }
+        "#
+        );
+    }
+
+    #[test]
+    fn test_completions_directives() {
+        // TODO empty line
+        // TODO subdirective (starts w/ whitespace)
+        let source = "
+        i
+        ";
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 1,
+                character: 1,
+            },
+            None,
+        );
+
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 1,
+                    character: 0,
+                },
+                end: Position {
+                    line: 2,
+                    character: 8,
+                },
+            },
+            [
+                Directive(
+                    "account",
+                ),
+                Directive(
+                    "alias",
+                ),
+                Directive(
+                    "commodity",
+                ),
+                Directive(
+                    "include",
+                ),
+                Directive(
+                    "payee",
+                ),
+                Directive(
+                    "tag",
+                ),
+                Directive(
+                    "year",
+                ),
+            ],
+        )
+        "#
+        );
+    }
+
+    #[test]
+    fn test_completions_tags() {
+        let source = textwrap::dedent(
+            "
+            24/01/02 Payee
+                ; Tag1: foo
+                ; Tag2: bar
+                ;
+                ; T
+                Account
+            ",
+        );
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 4,
+                character: 5,
+            },
+            None,
+        );
+        // FIXME this should be starting at char 5, right?
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 4,
+                    character: 4,
+                },
+                end: Position {
+                    line: 4,
+                    character: 5,
+                },
+            },
+            [
+                Tag(
+                    "Tag1",
+                ),
+                Tag(
+                    "Tag2",
+                ),
+            ],
+        )
+        "#
+        );
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 3,
+                character: 7,
+            },
+            None,
+        );
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 3,
+                    character: 6,
+                },
+                end: Position {
+                    line: 3,
+                    character: 10,
+                },
+            },
+            [
+                Tag(
+                    "Tag1",
+                ),
+                Tag(
+                    "Tag2",
+                ),
+            ],
+        )
+        "#
+        );
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 5,
+                character: 7,
+            },
+            None,
+        );
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 5,
+                    character: 6,
+                },
+                end: Position {
+                    line: 5,
+                    character: 7,
+                },
+            },
+            [
+                Tag(
+                    "Tag1",
+                ),
+                Tag(
+                    "Tag2",
+                ),
+            ],
+        )
+        "#
+        );
+    }
+
+    #[test]
+    fn test_completions_files() {
+        let source = "include ''";
+
+        let mut be = LedgerBackend::new();
+        be._test_project_files = Some(
+            vec!["foo.ledger", "bar.yaml", "baz/qux.ledger"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect(),
+        );
+        be.parse_document(source);
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 0,
+                character: 9,
+            },
+            Some(be),
+        );
+
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 0,
+                    character: 8,
+                },
+                end: Position {
+                    line: 0,
+                    character: 10,
+                },
+            },
+            [
+                File(
+                    "baz/qux.ledger",
+                ),
+                File(
+                    "foo.ledger",
+                ),
+            ],
+        )
+        "#
+        );
+    }
+
+    #[test]
+    fn test_completions_from_included_files() {
+        let included = textwrap::dedent(
+            "
+            24/01/02 IncludedPayee
+                IncludedAccount
+            ",
+        );
+        let source = textwrap::dedent(
+            "
+            include foo.ledger
+
+            24/01/02 Payee
+                Account
+            ",
+        );
+
+        let mut be = LedgerBackend::new();
+        be._test_included_content = Some(included.clone());
+        be._test_project_files = Some(vec![]);
+        be.parse_document(&source);
+        be.parse_document(&included);
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 3,
+                character: 11,
+            },
+            Some(be),
+        );
+
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 3,
+                    character: 9,
+                },
+                end: Position {
+                    line: 3,
+                    character: 14,
+                },
+            },
+            [
+                Payee(
+                    "IncludedPayee",
+                ),
+                Payee(
+                    "Payee",
+                ),
+            ],
+        )
+        "#
+        );
+    }
+
+    #[test]
+    fn test_formatting() {
+        let source = textwrap::dedent(
+            "
+            2023/09/28 (743) Check Withdrawal
+                ; Memo: CHK#743
+                SVFCU:Personal   $-160.00
+                SVFCU:Personal   $-16.00
+                Expenses:Uncategorized
+            ",
+        );
+
+        insta::assert_snapshot!(LedgerBackend::format(&source).unwrap(),
+        @r"
+        2023/09/28 (743) Check Withdrawal
+            ; Memo: CHK#743
+            SVFCU:Personal                          $-160.00
+            SVFCU:Personal                           $-16.00
+            Expenses:Uncategorized
+
+        ",
+        );
+    }
+
+    #[test]
+    fn test_node_xact_ranges() {
+        let source = textwrap::dedent(
+            "
+            2023/09/28 Foo
+                Bar   $-160.00
+                Qux:Fiz:Wi
+            ",
+        );
+        let mut be = LedgerBackend::new();
+        be.parse_document(&source);
+
+        // between ar in Bar
+        // FIXME this does not work if placed at end of Bar, it matches to the
+        // spaces between account and amount ... is that OK?
+        let position = &Position {
+            line: 2,
+            character: 7,
+        };
+        insta::assert_debug_snapshot!(get_node_info(&source, &position, &mut be),
+        @r#"
+        (
+            "account",
+            Range {
+                start: Position {
+                    line: 2,
+                    character: 4,
+                },
+                end: Position {
+                    line: 2,
+                    character: 7,
+                },
+            },
+        )
+        "#,
+        );
+
+        // end of Qux
+        let position = &Position {
+            line: 3,
+            character: 7,
+        };
+        insta::assert_debug_snapshot!(get_node_info(&source, &position, &mut be),
+        @r#"
+        (
+            "account",
+            Range {
+                start: Position {
+                    line: 3,
+                    character: 4,
+                },
+                end: Position {
+                    line: 3,
+                    character: 14,
+                },
+            },
+        )
+        "#,
+        );
+
+        // end of Wi
+        let position = &Position {
+            line: 3,
+            character: 14,
+        };
+        insta::assert_debug_snapshot!(get_node_info(&source, &position, &mut be),
+        @r#"
+        (
+            "account",
+            Range {
+                start: Position {
+                    line: 3,
+                    character: 4,
+                },
+                end: Position {
+                    line: 3,
+                    character: 14,
+                },
+            },
+        )
+        "#,
+        );
+
+        // middle of Foo
+        let position = &Position {
+            line: 1,
+            character: 12,
+        };
+        insta::assert_debug_snapshot!(get_node_info(&source, &position, &mut be),
+        @r#"
+        (
+            "payee",
+            Range {
+                start: Position {
+                    line: 1,
+                    character: 11,
+                },
+                end: Position {
+                    line: 1,
+                    character: 14,
+                },
+            },
+        )
+        "#,
+        );
+    }
+
+    #[test]
+    fn test_node_xact_periodic_ranges() {
+        // maintain a space after "weekly"
+        let source = vec!["~ weekly ", "    Bar", ""].join("\n");
+        let mut be = LedgerBackend::new();
+        be.parse_document(&source);
+
+        // after "weekly "
+        let position = &Position {
+            line: 0,
+            character: 8,
+        };
+        insta::assert_debug_snapshot!(get_node_info(&source, &position, &mut be),
+        @r#"
+        (
+            "interval",
+            Range {
+                start: Position {
+                    line: 0,
+                    character: 2,
+                },
+                end: Position {
+                    line: 0,
+                    character: 8,
+                },
+            },
+        )
+        "#,
+        );
+    }
+
+    #[test]
+    fn test_node_directive_ranges() {
+        let source = textwrap::dedent(
+            "
+            include foo
+            ",
+        );
+        let mut be = LedgerBackend::new();
+        be.parse_document(&source);
+
+        // middle of foo
+        let position = &Position {
+            line: 1,
+            character: 10,
+        };
+        insta::assert_debug_snapshot!(get_node_info(&source, &position, &mut be),
+        @r#"
+        (
+            "filename",
+            Range {
+                start: Position {
+                    line: 1,
+                    character: 8,
+                },
+                end: Position {
+                    line: 1,
+                    character: 11,
+                },
+            },
+        )
+        "#,
+        );
+
+        // end of foo
+        let position = &Position {
+            line: 1,
+            character: 11,
+        };
+        insta::assert_debug_snapshot!(get_node_info(&source, &position, &mut be),
+        @r#"
+        (
+            "word_directive",
+            Range {
+                start: Position {
+                    line: 1,
+                    character: 0,
+                },
+                end: Position {
+                    line: 1,
+                    character: 11,
+                },
+            },
+        )
+        "#,
+        );
+    }
+
+    //
+    //
+    //
+    fn get_completions(
+        source: &str,
+        position: &Position,
+        backend: Option<LedgerBackend>,
+    ) -> (LspRange, Vec<LedgerCompletion>) {
+        let mut backend = backend.unwrap_or_else(|| {
+            let mut be = LedgerBackend::new();
+            be._test_project_files = Some(vec![]);
+            be.parse_document(&source);
+            be
+        });
+
+        let mut visited = HashSet::new();
+        match backend.completions_for_position("unused in test", &source, &position, &mut visited) {
+            Ok(CompletionResult::Some {
+                range,
+                mut completions,
+            }) => {
+                completions.sort();
+                (range, completions)
+            }
+            _ => panic!(),
+        }
+    }
+
+    fn get_node_info(
+        source: &str,
+        position: &Position,
+        backend: &mut LedgerBackend,
+    ) -> (String, LspRange) {
+        let node = backend.node_at_position(&source, &position).unwrap();
+        let range = node.range();
+
+        (
+            node.kind().to_string(),
+            LspRange {
+                start: Position {
+                    line: range.start_point.row as u32,
+                    character: range.start_point.column as u32,
+                },
+                end: Position {
+                    line: range.end_point.row as u32,
+                    character: range.end_point.column as u32,
+                },
+            },
+        )
+    }
 }
