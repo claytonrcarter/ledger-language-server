@@ -5,6 +5,7 @@ use ledger::anon_unions::Code_Date_EffectiveDate_Note_Payee_Posting_Status as Xa
 use ledger::anon_unions::Commodity_NegativeQuantity_Quantity as AmountFields;
 use ledger::anon_unions::Interval_Note_Posting as PeriodicXactFields;
 use ledger::anon_unions::Note_Posting_Query as AutomatedXactFields;
+use ledger::JournalItem as TS_JournalItem;
 use type_sitter::{Node, Parser, Range, TreeCursor};
 
 use std::cmp::Ordering;
@@ -22,27 +23,36 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
     let mut parser = Parser::<ledger::SourceFile>::new(&tree_sitter_ledger::LANGUAGE.into())
         .expect("loading Ledger tree-sitter grammar");
     let tree = parser.parse(content, None).unwrap();
-    let mut cursor = tree.walk();
+    let root_node = tree.root_node().unwrap();
+    let mut raw_cursor = root_node.raw().walk();
 
     //
     // convert from tree sitter to internal types (easier to use)
     //
-    let journal_items: Vec<JournalItem> =
-        tree.root_node()
-            .unwrap()
-            .journal_items(&mut cursor)
-            .map(|journal_item| {
-                match journal_item.unwrap().child().unwrap() {
-                    JournalItems::Comment(comment) => JournalItem::Comment(Comment {
-                        range: comment.range(),
-                        content: substring(content, comment.range()),
-                    }),
-                    JournalItems::Directive(directive) => JournalItem::Directive(Directive {
-                        range: directive.range(),
-                        content: substring(content, directive.range()),
-                    }),
-                    JournalItems::Xact(xact) => {
-                        match xact.child().unwrap() {
+    let journal_items: Vec<JournalItem> = root_node
+        .raw()
+        .children(&mut raw_cursor)
+        .map(|journal_item| {
+            match TS_JournalItem::try_from_raw(journal_item) {
+                Ok(journal_item) => {
+                    let journal_item = journal_item.child().unwrap();
+
+                    if journal_item.has_error() {
+                        // dbg!(substring(content, journal_item.range()));
+                        // dbg!(journal_item.to_sexp());
+                        return JournalItem::Error(substring(content, journal_item.range()));
+                    }
+
+                    match journal_item {
+                        JournalItems::Comment(comment) => JournalItem::Comment(Comment {
+                            range: comment.range(),
+                            content: substring(content, comment.range()),
+                        }),
+                        JournalItems::Directive(directive) => JournalItem::Directive(Directive {
+                            range: directive.range(),
+                            content: substring(content, directive.range()),
+                        }),
+                        JournalItems::Xact(xact) => match xact.child().unwrap() {
                             Transactions::AutomatedXact(xact) => JournalItem::AutomatedXact(
                                 AutomatedXact::from_ts_xact(xact, content, || tree.walk()),
                             ),
@@ -52,22 +62,31 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
                             Transactions::PlainXact(xact) => JournalItem::PlainXact(
                                 PlainXact::from_ts_xact(xact, content, || tree.walk()),
                             ),
+                        },
+                        JournalItems::BlockComment(comment) => {
+                            // TODO
+                            JournalItem::Comment(Comment {
+                                range: comment.range(),
+                                content: substring(content, comment.range()),
+                            })
+                        }
+                        JournalItems::Test(test) => {
+                            // TODO
+                            JournalItem::Other(substring(content, test.range()))
                         }
                     }
-                    JournalItems::BlockComment(comment) => {
-                        // TODO
-                        JournalItem::Comment(Comment {
-                            range: comment.range(),
-                            content: substring(content, comment.range()),
-                        })
-                    }
-                    JournalItems::Test(test) => {
-                        // TODO
-                        JournalItem::Other(substring(content, test.range()))
-                    }
                 }
-            })
-            .collect();
+                Err(err) => match err.cause() {
+                    type_sitter::IncorrectKindCause::Error => {
+                        // dbg!(substring(content, err.node.range()));
+                        JournalItem::Error(format!("{}", substring(content, err.node.range())))
+                    }
+                    type_sitter::IncorrectKindCause::Missing
+                    | type_sitter::IncorrectKindCause::OtherKind(_) => JournalItem::Skip,
+                },
+            }
+        })
+        .collect();
 
     //
     // sort, attempting to keep comments that are interspersed with transactions
@@ -77,9 +96,9 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
     let mut chunks = Vec::new();
     let mut chunk = SortableChunk::new();
     for journal_item in journal_items.iter() {
-        chunk.items.push(&journal_item);
         match journal_item {
             JournalItem::PlainXact(ref t) => {
+                chunk.items.push(&journal_item);
                 chunk.date = t.date.clone();
                 chunks.push(chunk);
                 chunk = SortableChunk::new();
@@ -87,13 +106,19 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
             JournalItem::AutomatedXact(_)
             | JournalItem::PeriodicXact(_)
             | JournalItem::Directive(_) => {
+                chunk.items.push(&journal_item);
                 chunks.push(chunk);
                 chunk = SortableChunk::new();
             }
-            JournalItem::Comment(_) | JournalItem::Other(_) => {}
+            JournalItem::Comment(_)
+            | JournalItem::Other(_)
+            | JournalItem::Error(_)
+            | JournalItem::Skip => {
+                chunk.items.push(&journal_item);
+            }
         }
     }
-    // in case of trailing comments
+    // don't forget any trailing items
     if !chunk.items.is_empty() {
         chunks.push(chunk);
     }
@@ -119,6 +144,8 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
             JournalItem::Comment(comment) => comment.content.clone(),
             JournalItem::Directive(directive) => directive.content.clone(),
             JournalItem::Other(s) => s.clone(),
+            JournalItem::Error(s) => s.clone(),
+            JournalItem::Skip => continue,
         };
 
         // group similar items together into blocks, but separate all xacts w/ a
@@ -126,6 +153,9 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
         match (previous_item, &journal_item) {
             // don't start w/ a newline, and don't split "other" items
             (None, _) | (Some(JournalItem::Other(_)), JournalItem::Other(_)) => {}
+
+            // don't toucn errors
+            (Some(_), JournalItem::Error(_)) | (Some(JournalItem::Error(_)), _) => {}
 
             // preserve gaps (but only 1 line) between blocks of comments and/or directives
             (Some(JournalItem::Comment(prev_comment)), JournalItem::Comment(comment))
@@ -183,6 +213,8 @@ enum JournalItem {
     Comment(Comment),
     Directive(Directive),
     Other(String),
+    Error(String),
+    Skip,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -727,7 +759,9 @@ fn format_periodic_transaction() {
     let source = textwrap::dedent(
         r#"~   Monthly
   Account 1        $1.20
-    Account 2"#,
+    Account 2
+
+        "#,
     );
 
     insta::assert_snapshot!(
@@ -1044,16 +1078,28 @@ fn format_sorted_transactions() {
 fn format_error_nodes() {
     let source = textwrap::dedent(
         r#"
-        include       foo.ledger
-        invalid_directive
+        invalid   directive
+        include foo.ledger
+        22/2/2 Payee
+          Account  12/3/4 ; invalid qty
+        11/1/1 Payee
+          Account  $1
+        111 Payee
+          Does Not Compute  $1
         "#,
     );
 
     insta::assert_snapshot!(
         format(&source).unwrap(),
         @r#"
+        invalid   directive
         include foo.ledger
-        invalid_directive
+        111 Payee
+          Does Not Compute  $1
+        22/2/2 Payee
+          Account  12/3/4 ; invalid qty
+        11/1/1 Payee
+            Account                                       $1
         "#
     );
 }
