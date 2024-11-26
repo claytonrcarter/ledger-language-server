@@ -205,7 +205,7 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
 }
 
 fn substring(content: &str, range: Range) -> String {
-    content[range.start_byte..range.end_byte].to_string()
+    content[range.start_byte..range.end_byte].trim().to_string()
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -232,6 +232,7 @@ struct Directive {
     name: String,
     content: String,
     subdirectives: Vec<Directive>,
+    comments: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -315,6 +316,7 @@ impl<'tree> Directive {
             name: name.to_string(),
             content: content.trim().to_string(),
             subdirectives: Vec::new(),
+            comments: Vec::new(),
         }
     }
 
@@ -323,7 +325,7 @@ impl<'tree> Directive {
         content: &str,
         cursor_fn: T,
     ) -> Self {
-        use ledger::anon_unions::Account_AccountSubdirective as AccountDirectiveNodes;
+        use ledger::anon_unions::Account_AccountSubdirective_Comment as AccountDirectiveNodes;
 
         let mut d;
         let mut cursor = cursor_fn();
@@ -345,6 +347,18 @@ impl<'tree> Directive {
                                 )),
                                 None => {}
                             };
+                        }
+                        AccountDirectiveNodes::Comment(comment) => {
+                            if d.subdirectives.is_empty() {
+                                d.comments.push(substring(content, comment.range()));
+                            } else {
+                                // FIXME can we use in-place manipulation of the last() slice element
+                                let mut subdirective = d.subdirectives.pop().unwrap();
+                                subdirective
+                                    .comments
+                                    .push(substring(content, comment.range()));
+                                d.subdirectives.push(subdirective);
+                            }
                         }
                     }
                 }
@@ -392,6 +406,10 @@ impl<'tree> Directive {
 impl Display for Directive {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{} {}", self.name, self.content)?;
+
+        for comment in self.comments.iter() {
+            writeln!(f, "    {comment}")?;
+        }
 
         for subdirective in self.subdirectives.iter() {
             write!(f, "    {subdirective}")?;
@@ -1016,7 +1034,9 @@ fn format_directives() {
         "
         include   foo.ledger
         account  Foo
+          ; comment 1
           alias  Bar
+          ; comment 2
         ",
     );
 
@@ -1026,7 +1046,9 @@ fn format_directives() {
         include foo.ledger
 
         account Foo
+            ; comment 1
             alias Bar
+            ; comment 2
         "
     );
 }
