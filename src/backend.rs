@@ -12,6 +12,7 @@ use crate::{backend_format, contents_of_path};
 fn substring(source: &[u8], start_byte: usize, end_byte: usize) -> String {
     std::str::from_utf8(&source[start_byte..end_byte.min(source.len())])
         .expect("converting bytes back to text")
+        .trim()
         .to_string()
 }
 
@@ -122,6 +123,11 @@ impl LedgerBackend {
                 )));
             }
         };
+        let current_node_content = substring(
+            content.as_bytes(),
+            node.range().start_byte,
+            node.range().end_byte,
+        );
         let mut range = node.range();
 
         let line_content = content.lines().nth(position.line as usize).unwrap_or("");
@@ -133,7 +139,14 @@ impl LedgerBackend {
                 buffer_path,
                 "(account) @account",
                 content,
-                &|account| Some(LedgerCompletion::Account(account)),
+                &|account| {
+                    if account != current_node_content {
+                        Some(LedgerCompletion::Account(account))
+                    } else {
+                        // don't include current node content
+                        None
+                    }
+                },
                 visited,
             )?,
 
@@ -174,7 +187,14 @@ impl LedgerBackend {
                 buffer_path,
                 "(payee) @payee",
                 content,
-                &|payee| Some(LedgerCompletion::Payee(payee)),
+                &|payee| {
+                    if payee != current_node_content {
+                        Some(LedgerCompletion::Payee(payee))
+                    } else {
+                        // don't include current node content
+                        None
+                    }
+                },
                 visited,
             )?,
 
@@ -192,6 +212,11 @@ impl LedgerBackend {
                     "(note) @note",
                     content,
                     &|note| {
+                        if note == current_node_content {
+                            // don't include current node content
+                            return None;
+                        }
+
                         match note
                             // https://ledger-cli.org/doc/ledger3.html#Commenting-on-your-Journal
                             .trim_start_matches([' ', '\t', ';', '#', '%', '|', '*'])
@@ -267,13 +292,6 @@ impl LedgerBackend {
                 ));
             }
         };
-
-        // "is empty" is a proxy for "this is the first call" to completions,
-        // not a recursive call to included files
-        if visited.is_empty() {
-            // self.completions_insert_directives(&mut completions);
-            // self.completions_insert_periods(&mut completions);
-        }
 
         let tree = match self.trees_cache.get(content) {
             Some(tree) => tree.clone(),
@@ -635,9 +653,6 @@ mod test {
                     "Mom & Dad",
                 ),
                 Payee(
-                    "Payee1",
-                ),
-                Payee(
                     "Payee2",
                 ),
             ],
@@ -687,9 +702,6 @@ mod test {
                 },
             },
             [
-                Account(
-                    "Account1",
-                ),
                 Account(
                     "Account2",
                 ),
@@ -1100,9 +1112,6 @@ mod test {
                 Tag(
                     "Tag1",
                 ),
-                Tag(
-                    "Tag2",
-                ),
             ],
         )
         "#
@@ -1238,9 +1247,6 @@ mod test {
             [
                 Payee(
                     "IncludedPayee",
-                ),
-                Payee(
-                    "Payee",
                 ),
             ],
         )
