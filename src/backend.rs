@@ -532,11 +532,31 @@ impl LedgerBackend {
     fn node_at_position(&mut self, content: &str, position: &Position) -> Option<Node> {
         let debug = false;
         let tree = self.trees_cache.get(content)?;
-        let content_line = content.lines().nth(position.line as usize).unwrap_or("");
 
-        let point = Point {
-            row: position.line as usize,
-            column: position.character as usize,
+        // FIXME this seems like it may be expensive; this fn is called for
+        // every call for completions; collecting a large buffer to lines is
+        // likely to affect perf
+        let content_lines: Vec<&str> = content.lines().collect();
+        let content_line = content_lines.get(position.line as usize).unwrap_or(&"");
+
+        let point = {
+            let mut point = Point {
+                row: position.line as usize,
+                column: position.character as usize,
+            };
+
+            let position_is_end_of_file =
+                content_lines.len() == point.row + 1 && content_line.len() == point.column;
+
+            if position_is_end_of_file {
+                if point.column != 0 {
+                    point.column -= 1;
+                } else {
+                    point.row -= 1;
+                    point.column = content_lines.get(point.row).map_or(0, |l| l.len());
+                }
+            }
+            point
         };
         let mut cursor = tree.walk();
 
@@ -1457,15 +1477,52 @@ mod test {
         insta::assert_debug_snapshot!(get_node_info(&source, &position, &mut be),
         @r#"
         (
-            "word_directive",
+            "filename",
             Range {
                 start: Position {
                     line: 1,
-                    character: 0,
+                    character: 8,
                 },
                 end: Position {
                     line: 1,
                     character: 11,
+                },
+            },
+        )
+        "#,
+        );
+    }
+
+    #[test]
+    fn test_node_ranges_at_end_of_file() {
+        let source = textwrap::dedent(
+            "
+            2023/09/28 Foo
+                Bar
+
+            2023/09/28 Fii
+                Buz",
+        );
+        let mut be = LedgerBackend::new();
+        be.parse_document(&source);
+
+        // end of Buz, which is also end of file
+        let position = &Position {
+            line: 5,
+            character: 7,
+        };
+        insta::assert_debug_snapshot!(get_node_info(&source, &position, &mut be),
+        @r#"
+        (
+            "account",
+            Range {
+                start: Position {
+                    line: 5,
+                    character: 4,
+                },
+                end: Position {
+                    line: 5,
+                    character: 7,
                 },
             },
         )
