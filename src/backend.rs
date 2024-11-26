@@ -340,10 +340,14 @@ impl LedgerBackend {
                     visited.insert(filename.to_string());
                 }
 
-                let included_content = self._test_included_content.as_ref().map_or_else(
-                    || contents_of_path(filename),
-                    |content| Ok(content.to_string()),
-                )?;
+                let included_content = self
+                    ._test_included_content
+                    .as_ref()
+                    .map_or_else(
+                        || contents_of_path(filename),
+                        |content| Ok(content.to_string()),
+                    )
+                    .unwrap_or_else(|_| String::new());
 
                 self.parse_document(&included_content);
 
