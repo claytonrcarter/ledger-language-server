@@ -1,3 +1,4 @@
+use ledger::anon_unions::AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective as Directives;
 use ledger::anon_unions::Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status as PostingFields;
 use ledger::anon_unions::AutomatedXact_PeriodicXact_PlainXact as Transactions;
 use ledger::anon_unions::BlockComment_Comment_Directive_Test_Xact as JournalItems;
@@ -48,10 +49,9 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
                             range: comment.range(),
                             content: substring(content, comment.range()),
                         }),
-                        JournalItems::Directive(directive) => JournalItem::Directive(Directive {
-                            range: directive.range(),
-                            content: substring(content, directive.range()),
-                        }),
+                        JournalItems::Directive(directive) => JournalItem::Directive(
+                            Directive::from_ts_xact(directive, content, || tree.walk()),
+                        ),
                         JournalItems::Xact(xact) => match xact.child().unwrap() {
                             Transactions::AutomatedXact(xact) => JournalItem::AutomatedXact(
                                 AutomatedXact::from_ts_xact(xact, content, || tree.walk()),
@@ -142,7 +142,7 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
             JournalItem::PeriodicXact(xact) => xact.to_string(),
             JournalItem::AutomatedXact(xact) => xact.to_string(),
             JournalItem::Comment(comment) => comment.content.clone(),
-            JournalItem::Directive(directive) => directive.content.clone(),
+            JournalItem::Directive(directive) => directive.to_string(),
             JournalItem::Other(s) => s.clone(),
             JournalItem::Error(s) => s.clone(),
             JournalItem::Skip => continue,
@@ -157,22 +157,25 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
             // don't toucn errors
             (Some(_), JournalItem::Error(_)) | (Some(JournalItem::Error(_)), _) => {}
 
-            // preserve gaps (but only 1 line) between blocks of comments and/or directives
+            // preserve gaps between blocks of comments
             (Some(JournalItem::Comment(prev_comment)), JournalItem::Comment(comment))
                 if prev_comment.range.end_point.row != comment.range.start_point.row =>
             {
                 writeln!(buf, "")?
             }
 
+            // preserve gaps between blocks of directives, also group them by
+            // directive type
             (Some(JournalItem::Directive(prev_directive)), JournalItem::Directive(directive))
-                if prev_directive.range.end_point.row != directive.range.start_point.row =>
+                if prev_directive.range.end_point.row != directive.range.start_point.row
+                    || prev_directive.name != directive.name =>
             {
                 writeln!(buf, "")?
             }
 
             // preserve blocks of comments and directives
-            (Some(JournalItem::Comment(_)), JournalItem::Comment(_))
-            | (Some(JournalItem::Directive(_)), JournalItem::Directive(_)) => {}
+            (Some(JournalItem::Comment(_)), JournalItem::Comment(_)) => {}
+            (Some(JournalItem::Directive(_)), JournalItem::Directive(_)) => {}
 
             // don't split comments immediately preceeding directives and xacts
             (Some(JournalItem::Comment(prev_comment)), JournalItem::Directive(directive))
@@ -223,10 +226,12 @@ struct Comment {
     content: String,
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct Directive {
     range: Range,
+    name: String,
     content: String,
+    subdirectives: Vec<Directive>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -297,6 +302,103 @@ struct Amount {
     commodity_position: CommodityPosition,
     commodity: Option<String>,
     quantity: Option<String>,
+}
+
+impl<'tree> Directive {
+    fn new(range: Range, directive_content: String) -> Self {
+        let (name, content) = directive_content
+            .trim()
+            .split_once([' ', '\t'])
+            .unwrap_or_else(|| ("", ""));
+        Self {
+            range,
+            name: name.to_string(),
+            content: content.trim().to_string(),
+            subdirectives: Vec::new(),
+        }
+    }
+
+    fn from_ts_xact<'a, T: Fn() -> TreeCursor<'tree>>(
+        directive: ledger::Directive<'tree>,
+        content: &str,
+        cursor_fn: T,
+    ) -> Self {
+        use ledger::anon_unions::Account_AccountSubdirective as AccountDirectiveNodes;
+
+        let mut d;
+        let mut cursor = cursor_fn();
+        match directive.child().unwrap() {
+            Directives::AccountDirective(directive) => {
+                d = Directive::new(directive.range(), substring(content, directive.range()));
+
+                for child in directive.children(&mut cursor) {
+                    match child.unwrap() {
+                        AccountDirectiveNodes::Account(account) => {
+                            d.content = substring(content, account.range());
+                        }
+                        AccountDirectiveNodes::AccountSubdirective(subdirective) => {
+                            match subdirective.child() {
+                                // FIXME consider normalizing/formatting subdirectives depending on thier type?
+                                Some(subdirective) => d.subdirectives.push(Directive::new(
+                                    subdirective.unwrap().range(),
+                                    substring(content, subdirective.unwrap().range()),
+                                )),
+                                None => {}
+                            };
+                        }
+                    }
+                }
+            }
+
+            Directives::WordDirective(directive) => {
+                d = Directive::new(directive.range(), substring(content, directive.range()));
+
+                // unlike other directives, word and char directives do not
+                // include the trailing newline; bump the range to fake it so
+                // that we can treat all directives the same for grouping
+                d.range.end_byte += 1;
+                d.range.end_point.row += 1;
+                d.range.end_point.column = 0;
+            }
+
+            Directives::CharDirective(directive) => {
+                d = Directive::new(directive.range(), substring(content, directive.range()));
+
+                // unlike other directives, word and char directives do not
+                // include the trailing newline; bump the range to fake it so
+                // that we can treat all directives the same for grouping
+                d.range.end_byte += 1;
+                d.range.end_point.row += 1;
+                d.range.end_point.column = 0;
+            }
+
+            Directives::CommodityDirective(directive) => {
+                d = Directive::new(directive.range(), substring(content, directive.range()));
+            }
+
+            Directives::Option(directive) => {
+                d = Directive::new(directive.range(), substring(content, directive.range()));
+            }
+
+            Directives::TagDirective(directive) => {
+                d = Directive::new(directive.range(), substring(content, directive.range()));
+            }
+        }
+
+        d
+    }
+}
+
+impl Display for Directive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{} {}", self.name, self.content)?;
+
+        for subdirective in self.subdirectives.iter() {
+            write!(f, "    {subdirective}")?;
+        }
+
+        Ok(())
+    }
 }
 
 impl<'tree> PlainXact {
@@ -904,6 +1006,66 @@ fn format_prices() {
         2023/11/21
             Produce:Peppers                    -80lb @ $2.40
             Assets:Accounts Recievable
+        "
+    );
+}
+
+#[test]
+fn format_directives() {
+    let source = textwrap::dedent(
+        "
+        include   foo.ledger
+        account  Foo
+          alias  Bar
+        ",
+    );
+
+    insta::assert_snapshot!(
+        format(&source).unwrap(),
+        @r"
+        include foo.ledger
+
+        account Foo
+            alias Bar
+        "
+    );
+}
+
+#[test]
+fn format_directives_grouping() {
+    let source = textwrap::dedent(
+        "
+        account Uncategorized
+
+        tag Memo
+        tag memo
+        commodity $
+
+        account Equity:Opening Balances
+
+        account Assets:Farm:Accounts Recievable
+            alias Assets:Accounts Recievable
+        account Assets:Buildings:Barn
+            alias Assets:Farm Buildings:Barn
+        ",
+    );
+
+    insta::assert_snapshot!(
+        format(&source).unwrap(),
+        @r"
+        account Uncategorized
+
+        tag Memo
+        tag memo
+
+        commodity $
+
+        account Equity:Opening Balances
+
+        account Assets:Farm:Accounts Recievable
+            alias Assets:Accounts Recievable
+        account Assets:Buildings:Barn
+            alias Assets:Farm Buildings:Barn
         "
     );
 }

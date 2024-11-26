@@ -117,8 +117,6 @@ impl LedgerBackend {
         let node = match self.node_at_position(content, position) {
             Some(node) => node,
             None => {
-                dbg!(content);
-                dbg!(position);
                 return Ok(CompletionResult::NoNode(format!(
                     "No node found at position {position:?}"
                 )));
