@@ -341,7 +341,7 @@ impl LanguageServer for Lsp {
 
         log!(
             self,
-            "[completion] response: {} completions @ {:?}",
+            "[completion:response] {} completions @ {:?}",
             completions.len(),
             start_time.elapsed()
         );
@@ -379,7 +379,7 @@ impl LanguageServer for Lsp {
 
         log!(
             self,
-            "[formatting] response: done in {:?}",
+            "[formatting:response] done in {:?}",
             start_time.elapsed()
         );
         Ok(Some(vec![TextEdit {
