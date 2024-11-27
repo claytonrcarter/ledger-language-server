@@ -510,19 +510,24 @@ impl LedgerBackend {
                 ))
             })
             .filter_map(|(path, range)| {
-                let path = Path::new(path);
-                let path = if path.is_absolute() {
-                    path.to_path_buf()
-                } else {
-                    // FIXME what is parent() is None?
-                    let dir = Path::new(buffer_path).parent()?;
-                    dir.join(path)
+                let fs_path = {
+                    let path = Path::new(path);
+                    if path.is_absolute() {
+                        path.to_path_buf()
+                    } else {
+                        // FIXME what is parent() is None?
+                        let dir = Path::new(buffer_path).parent()?;
+                        dir.join(path)
+                    }
                 };
 
-                if path.exists() {
+                if fs_path.exists() {
                     None
                 } else {
-                    Some(Diagnostic::new_simple(range, "does not exist".to_owned()))
+                    Some(Diagnostic::new_simple(
+                        range,
+                        format!("File '{path}' does not exist"),
+                    ))
                 }
             })
             .collect()
