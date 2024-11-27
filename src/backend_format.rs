@@ -17,7 +17,7 @@ mod ledger {
     include!("./type_sitter/ledger.rs");
 }
 
-pub fn format(content: &str) -> Result<String, std::io::Error> {
+pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io::Error> {
     //
     // parse with tree sitter
     //
@@ -88,48 +88,52 @@ pub fn format(content: &str) -> Result<String, std::io::Error> {
         })
         .collect();
 
-    //
-    // sort, attempting to keep comments that are interspersed with transactions
-    // together with those transactions, while pushing all other things to the
-    // start of the journal
-    //
-    let mut chunks = Vec::new();
-    let mut chunk = SortableChunk::new();
-    for journal_item in journal_items.iter() {
-        match journal_item {
-            JournalItem::PlainXact(ref t) => {
-                chunk.items.push(&journal_item);
-                chunk.date = t.date.clone();
-                chunks.push(chunk);
-                chunk = SortableChunk::new();
-            }
-            JournalItem::AutomatedXact(_)
-            | JournalItem::PeriodicXact(_)
-            | JournalItem::Directive(_) => {
-                chunk.items.push(&journal_item);
-                chunks.push(chunk);
-                chunk = SortableChunk::new();
-            }
-            JournalItem::Comment(_)
-            | JournalItem::Other(_)
-            | JournalItem::Error(_)
-            | JournalItem::Skip => {
-                chunk.items.push(&journal_item);
+    let journal_items = if !sort_transactions {
+        journal_items
+    } else {
+        //
+        // sort, attempting to keep comments that are interspersed with transactions
+        // together with those transactions, while pushing all other things to the
+        // start of the journal
+        //
+        let mut chunks = Vec::new();
+        let mut chunk = SortableChunk::new();
+        for journal_item in journal_items.iter() {
+            match journal_item {
+                JournalItem::PlainXact(ref t) => {
+                    chunk.items.push(&journal_item);
+                    chunk.date = t.date.clone();
+                    chunks.push(chunk);
+                    chunk = SortableChunk::new();
+                }
+                JournalItem::AutomatedXact(_)
+                | JournalItem::PeriodicXact(_)
+                | JournalItem::Directive(_) => {
+                    chunk.items.push(&journal_item);
+                    chunks.push(chunk);
+                    chunk = SortableChunk::new();
+                }
+                JournalItem::Comment(_)
+                | JournalItem::Other(_)
+                | JournalItem::Error(_)
+                | JournalItem::Skip => {
+                    chunk.items.push(&journal_item);
+                }
             }
         }
-    }
-    // don't forget any trailing items
-    if !chunk.items.is_empty() {
-        chunks.push(chunk);
-    }
+        // don't forget any trailing items
+        if !chunk.items.is_empty() {
+            chunks.push(chunk);
+        }
 
-    chunks.sort();
+        chunks.sort();
 
-    let journal_items = chunks
-        .iter()
-        .flat_map(|chunk| chunk.items.clone())
-        .cloned()
-        .collect::<Vec<JournalItem>>();
+        chunks
+            .iter()
+            .flat_map(|chunk| chunk.items.clone())
+            .cloned()
+            .collect()
+    };
 
     //
     // print/format
@@ -845,7 +849,7 @@ fn format_transaction() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         2018/10/01 (123) Payee 123
             TEST:ABC 123                               $1.20
@@ -865,7 +869,7 @@ fn format_transaction_with_looooong_account_name() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         2018/10/01 Payee 123
             TEST:LoremIpsumDolorSitAmetConsecteturAdipiscingElit  $1.20
@@ -885,7 +889,7 @@ fn format_periodic_transaction() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r#"
         ~ Monthly
             Account 1                                  $1.20
@@ -904,7 +908,7 @@ fn format_automated_transaction() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r#"
         = Expenses:.*
             (Account:Foo)                               0.67
@@ -928,7 +932,7 @@ fn format_transaction_notes() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         2018/10/01 Payee ; note 1
             ; note 2
@@ -952,7 +956,7 @@ fn format_payee_with_special_chars() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         2018/10/01 * (123) Payee* !123
             TEST:ABC 123                               $1.20
@@ -972,7 +976,7 @@ fn format_effective_dates() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         2018/10/01=2011/02/03 Payee
             TEST:ABC 123                               $1.20
@@ -992,7 +996,7 @@ fn format_balance_assertions() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         2018/10/01 Payee
             TEST:ABC 123                        $1.20 = $123
@@ -1015,7 +1019,7 @@ fn format_prices() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         2023/11/21
             Produce:Sweet Potatoes       -80 {$2.40} @@ $192
@@ -1041,7 +1045,7 @@ fn format_directives() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         include foo.ledger
 
@@ -1073,7 +1077,7 @@ fn format_directives_grouping() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         account Uncategorized
 
@@ -1116,7 +1120,7 @@ fn format_grouping_journal_items() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         ; comment 1
         ; comment 2
@@ -1158,7 +1162,7 @@ fn format_journal() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r#"
         ; comment 1
         include foo.ledger
@@ -1192,7 +1196,7 @@ fn format_normalize_dates() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, false).unwrap(),
         @r"
         2018/10/01 Payee
             Account
@@ -1233,7 +1237,7 @@ fn format_sorted_transactions() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, true).unwrap(),
         @r#"
         ; foo comment
 
@@ -1274,7 +1278,7 @@ fn format_error_nodes() {
     );
 
     insta::assert_snapshot!(
-        format(&source).unwrap(),
+        format(&source, true).unwrap(),
         @r#"
         invalid   directive
         include foo.ledger

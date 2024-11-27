@@ -14,6 +14,7 @@ pub async fn run_server() {
         client,
         state: Mutex::new(LspState {
             backend: LedgerBackend::new(),
+            config: Config::default(),
             sources: HashMap::new(),
         }),
     });
@@ -23,8 +24,26 @@ pub async fn run_server() {
 pub struct LspState {
     pub backend: LedgerBackend,
 
+    pub config: Config,
+
     // see https://github.com/ebkalderon/nix-language-server/blob/master/src/backend.rs#L14-L23
+    /// Mapping of path names to file contents.
     pub sources: HashMap<String, String>,
+}
+
+#[derive(Debug)]
+pub struct Config {
+    pub format: bool,
+    pub format_sort_transactions: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            format: true,
+            format_sort_transactions: true,
+        }
+    }
 }
 
 pub struct Lsp {
@@ -53,10 +72,35 @@ macro_rules! log {
 impl LanguageServer for Lsp {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         log!(self, "[initialize] {params:#?}");
+        log!(
+            self,
+            "[initialize:initialization_options] {:#?}",
+            params.initialization_options
+        );
 
-        // let _opts = params.initialization_options;
-        // formatting
-        // sorting
+        let mut state = self.state.lock().await;
+        if let Some(ref opts) = params.initialization_options {
+            match opts.get("formatting") {
+                Some(Value::Bool(should_format)) => {
+                    state.config.format = *should_format;
+                }
+                Some(_) => {
+                    log!(self, WARNING, "[initialize:config] unrecognized value for lsp setting 'formatting'. Expected one of `true` or `false`.");
+                }
+                None => {}
+            }
+
+            match opts.get("sort_transactions") {
+                Some(Value::Bool(should_sort)) => {
+                    state.config.format_sort_transactions = *should_sort;
+                }
+                Some(_) => {
+                    log!(self, WARNING, "[initialize:config] unrecognized value for lsp setting 'sort_transactions'. Expected one of `true` or `false`.");
+                }
+                None => {}
+            }
+        }
+        log!(self, "[initialize:config] {:#?}", state.config);
 
         Ok(InitializeResult {
             server_info: None,
@@ -84,7 +128,8 @@ impl LanguageServer for Lsp {
                     }),
                     file_operations: None,
                 }),
-                document_formatting_provider: Some(OneOf::Left(true)),
+                document_formatting_provider: Some(OneOf::Left(true))
+                    .filter(|_| state.config.format),
                 definition_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
@@ -308,12 +353,23 @@ impl LanguageServer for Lsp {
         let start_time = std::time::Instant::now();
 
         let state = self.state.lock().await;
+        if !state.config.format {
+            // we already told the client that we don't "support" formatting,
+            // but perhaps they're asking anyway?
+            log!(
+                self,
+                "[formatting:response] not formatting: disabled by user settings",
+            );
+            return Ok(None);
+        }
+
         let source = match state.sources.get(params.text_document.uri.path()) {
             Some(source) => source,
             None => return Ok(None),
         };
 
-        let formatted = match LedgerBackend::format(&source) {
+        let formatted = match LedgerBackend::format(&source, state.config.format_sort_transactions)
+        {
             Ok(formatted) => formatted,
             Err(err) => {
                 log!(self, ERROR, "{err}");

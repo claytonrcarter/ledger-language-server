@@ -533,8 +533,9 @@ impl LedgerBackend {
             .collect()
     }
 
-    pub fn format(content: &str) -> Result<String, String> {
-        backend_format::format(content).map_err(|_err| "TODO convert io::Error to ???".to_string())
+    pub fn format(content: &str, sort_transactions: bool) -> Result<String, String> {
+        backend_format::format(content, sort_transactions)
+            .map_err(|_err| "TODO convert io::Error to ???".to_string())
     }
 
     /// Get the smallest named node at the given position.
@@ -1295,7 +1296,7 @@ mod test {
             ",
         );
 
-        insta::assert_snapshot!(LedgerBackend::format(&source).unwrap(),
+        insta::assert_snapshot!(LedgerBackend::format(&source, false).unwrap(),
         @r"
         2023/09/28 (743) Check Withdrawal
             ; Memo: CHK#743
