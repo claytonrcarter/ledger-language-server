@@ -1,5 +1,5 @@
 [package]
-name = "ledger-lsp"
+name = "ledger-language-server"
 version = "0.1.0"
 edition = "2021"
 
@@ -20,10 +20,14 @@ tokio = { version = "1", features = [
 ] }
 tower-lsp = { version = "0.20", features = ["runtime-tokio"] }
 tree-sitter = "0.24"
-tree-sitter-ledger = { path = "../tree-sitter/tree-sitter-ledger" }
+# local dev
+# tree-sitter-ledger = { path = "../tree-sitter/tree-sitter-ledger" }
+# temp: forked upstream
+tree-sitter-ledger = { git = "https://github.com/claytonrcarter/tree-sitter-ledger.git", rev = "44d611e5eb0ec7a8cd11fa35b4f2e5c28a492ee4" }
+# actual upstream
+# tree-sitter-ledger = { git = "https://github.com/cbarrete/tree-sitter-ledger.git", rev = "8a841fb20ce683bfbb3469e6ba67f2851cfdf94a" }
 type-sitter = { version = "0.5.2", default-features = false }
 walkdir = "2.5.0"
-# tree-sitter-ledger = { git = "https://github.com/cbarrete/tree-sitter-ledger.git", rev = "8a841fb20ce683bfbb3469e6ba67f2851cfdf94a" }
 
 [dev-dependencies]
 insta = "1.39.0"

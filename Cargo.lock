@@ -927,6 +927,7 @@ checksum = "e8ddffe35a0e5eeeadf13ff7350af564c6e73993a24db62caee1822b185c2600"
 [[package]]
 name = "tree-sitter-ledger"
 version = "0.0.1"
+source = "git+https://github.com/claytonrcarter/tree-sitter-ledger.git?rev=44d611e5eb0ec7a8cd11fa35b4f2e5c28a492ee4#44d611e5eb0ec7a8cd11fa35b4f2e5c28a492ee4"
 dependencies = [
  "cc",
  "tree-sitter-language",

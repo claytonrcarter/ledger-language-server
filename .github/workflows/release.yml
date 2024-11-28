@@ -1,0 +1,107 @@
+# Originally from
+# https://github.com/martinvonz/jj/blob/main/.github/workflows/release.yml
+# via
+# https://github.com/arxanas/git-branchless/blob/master/.github/workflows/release.yml
+name: Release
+
+on:
+  release:
+    types: [created, edited, published]
+
+permissions: read-all
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        # when updating, don't forget to update the release binary names, below
+        build: [linux, macos, macos-intel]
+        include:
+          - build: linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - build: macos
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - build: macos-intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Compile
+        run: cargo build --verbose --release
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: target/release/ledger-language-server
+          path: dist/ledger-language-server-${{ github.event.release.tag_name }}-${{ matrix.build }}
+
+  release:
+    runs-on: macos-latest
+    # timeout-minutes: 15
+    name: Build and release ledger-language-server
+
+    permissions:
+      # for softprops/action-gh-release to create GitHub release
+      contents: write
+
+    needs:
+      - build
+
+    steps:
+      - uses: actions/checkout@v4
+        # with:
+        #   fetch-tags: true
+        #   fetch-depth: 20
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      # # for now, just upload
+      # - name: Prep binaries
+      #   shell: bash
+      #   run: |
+      #     BINARY_NAME="ledger-language-server-${{ github.event.release.tag_name }}-${{ matrix.target }}"
+      #     mkdir -p "dist"
+      #     # cp README.md LICENSE-{APACHE,MIT} "$staging/"
+      #     cp "target/release/ledger-language-server" "dist/${BINARY_NAME}"
+      #     # tar czf "$staging.tar.gz" -C "$staging" .
+      #     # echo "ASSET=$binary_name" >> $GITHUB_ENV
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          path: dist/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.event.release.tag_name }}
+          files: |
+            dist/ledger-language-server-${{ github.event.release.tag_name }}-linux
+            dist/ledger-language-server-${{ github.event.release.tag_name }}-macos
+            dist/ledger-language-server-${{ github.event.release.tag_name }}-macos-intel
+
+    # - name: Upload release archive
+    #   uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    #   with:
+    #     upload_url: ${{ github.event.release.upload_url }}
+    #     asset_path: ${{ env.ASSET }}
+    #     asset_name: ${{ env.ASSET }}
+    #     asset_content_type: application/octet-stream
