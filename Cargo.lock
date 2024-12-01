@@ -418,8 +418,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
-name = "ledger-lsp"
-version = "0.1.0"
+name = "ledger-language-server"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "cc",
@@ -927,6 +927,7 @@ checksum = "e8ddffe35a0e5eeeadf13ff7350af564c6e73993a24db62caee1822b185c2600"
 [[package]]
 name = "tree-sitter-ledger"
 version = "0.0.1"
+source = "git+https://github.com/claytonrcarter/tree-sitter-ledger.git?rev=44d611e5eb0ec7a8cd11fa35b4f2e5c28a492ee4#44d611e5eb0ec7a8cd11fa35b4f2e5c28a492ee4"
 dependencies = [
  "cc",
  "tree-sitter-language",

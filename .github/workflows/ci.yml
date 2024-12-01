@@ -1,0 +1,35 @@
+name: test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - '**'
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+
+jobs:
+  run-tests:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - run: rustup update
+      - run: rustup default stable
+
+      - name: Compile
+        run: cargo build --tests --verbose
+
+      - name: Test
+        run: |
+          export RUST_BACKTRACE=1
+          cargo test --verbose --no-fail-fast

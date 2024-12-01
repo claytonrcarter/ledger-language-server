@@ -1,0 +1,107 @@
+# Originally from
+# https://github.com/martinvonz/jj/blob/main/.github/workflows/release.yml
+# via
+# https://github.com/arxanas/git-branchless/blob/master/.github/workflows/release.yml
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions: read-all
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          # strip is copied from tailwind action: -x is needed on mac, not linux
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform_label: linux-x86_64
+            strip: strip
+
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform_label: apple-aarch64
+            strip: strip -x
+
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform_label: apple-x86_64
+            strip: strip -x
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Set release version from tag
+        run: echo "RELEASE_VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Confirm release version
+        run: |
+          echo "Expecting 'version = \"${RELEASE_VERSION}\"' in Cargo.toml"
+          echo "Found     '$(grep '^version = \"${RELEASE_VERSION}\"' Cargo.toml)'"
+          grep "^version = \"${RELEASE_VERSION}\"" Cargo.toml
+
+      - run: rustup update
+      - run: rustup target add ${{ matrix.target }}
+      - run: rustup default stable
+
+      # https://github.com/Swatinem/rust-cache
+      - name: Cache dependencies
+        uses: swatinem/rust-cache@v2
+
+      - name: Compile
+        run: cargo build --verbose --release --target ${{ matrix.target }}
+
+      # https://github.com/tailwindlabs/tailwindcss/blob/next/.github/workflows/release.yml#L133-L135
+      # https://github.com/rust-lang/rust/issues/46034
+      - name: Prep compiled artifact
+        run: |
+          mkdir dist
+          cp target/${{ matrix.target }}/release/ledger-language-server \
+            dist/ledger-language-server-${RELEASE_VERSION}-${{ matrix.platform_label }}
+          ${{ matrix.strip }} dist/ledger-language-server-${RELEASE_VERSION}-${{ matrix.platform_label }}
+
+      - name: (debug) list renamed artifact
+        run: ls -l dist/*
+
+      # https://github.com/actions/upload-artifact
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ledger-language-server-${{ env.RELEASE_VERSION }}-${{ matrix.platform_label }}
+          path: dist/ledger-language-server-${{ env.RELEASE_VERSION }}-${{ matrix.platform_label }}
+
+  release:
+    runs-on: ubuntu-latest
+
+    # for softprops/action-gh-release to create release
+    permissions:
+      contents: write
+
+    needs:
+      - build
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: (debug) list artifacts
+        run: ls -lhRt dist
+
+      # https://github.com/softprops/action-gh-release
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: dist/*
