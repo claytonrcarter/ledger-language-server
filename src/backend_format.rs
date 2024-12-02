@@ -288,6 +288,8 @@ enum CommodityPosition {
 struct Posting {
     account: String,
 
+    status: Option<String>,
+
     amount: Option<Amount>,
     lot_price: Option<Amount>,
     price: Option<Price>,
@@ -686,11 +688,8 @@ impl<'tree> Posting {
                         Some(Price::Unit(amount))
                     };
                 }
-                PostingFields::Status(_) => {
-                    todo!(
-                        "posting status on line: {}",
-                        substring(content, posting.range())
-                    )
+                PostingFields::Status(status) => {
+                    p.status = Some(substring(content, status.range()));
                 }
             }
         }
@@ -714,18 +713,21 @@ impl Display for Posting {
             amount.push_str(format!(" = {assertion}").as_str());
         };
 
+        let status = self.status.clone().map_or("".to_string(), |s| s + " ");
+
         let amount_width = if amount.is_empty() {
             // no amount on this line => leave no trailing spaces at all
             0
         } else {
             // try to align to 48 chars, unless account name is too long
-            let width = 48usize.saturating_sub(self.account.len());
+            let width = 48usize.saturating_sub(self.account.len() + status.len());
             width.max(2 + amount.len())
         };
 
         write!(
             f,
-            "    {}{amount:>width$}",
+            "    {}{}{amount:>width$}",
+            status,
             self.account,
             width = amount_width
         )?;
@@ -844,7 +846,8 @@ fn format_transaction() {
         "
         2018/10/01    (123)     Payee 123
           TEST:ABC 123        $1.20
-           TEST:DEF 123
+            !   TEST:DEF 123  $2.30
+           TEST:GHI
         ",
     );
 
@@ -853,7 +856,8 @@ fn format_transaction() {
         @r"
         2018/10/01 (123) Payee 123
             TEST:ABC 123                               $1.20
-            TEST:DEF 123
+            ! TEST:DEF 123                             $2.30
+            TEST:GHI
         "
     );
 }

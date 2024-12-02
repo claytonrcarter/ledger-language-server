@@ -3,6 +3,9 @@ name = "ledger-language-server"
 version = "0.0.1"
 edition = "2021"
 
+[lints.clippy]
+todo = "warn"
+
 [build-dependencies]
 cc = "*"
 
