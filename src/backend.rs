@@ -32,7 +32,7 @@ fn word_boundary_range(line: &str, index: usize, addl_end_char: Option<char>) ->
             .map_or_else(|| before_point.len(), |i| i + 1);
         let end_offset = after_point
             .find(end_boundary.as_slice())
-            .unwrap_or_else(|| after_point.len());
+            .unwrap_or(after_point.len());
 
         // dbg!(line, index, start_offset, end_offset, index + end_offset);
 
@@ -97,7 +97,7 @@ impl LedgerBackend {
 
     /// Parse an input document (source code) and save the parsed Tree for use
     /// later. If the document has already been cached, no new parsing is done.
-    pub fn parse_document<'a>(&mut self, content: &'a str) {
+    pub fn parse_document(&mut self, content: &str) {
         if !self.trees_cache.contains_key(content) {
             self.trees_cache.insert(
                 content.to_string(),
@@ -485,7 +485,7 @@ impl LedgerBackend {
             .enumerate()
             .filter_map(|(i, line)| {
                 let path = match line.trim().split_once(' ') {
-                    Some((maybe_include, maybe_path)) if maybe_include == "include" => {
+                    Some(("include", maybe_path)) => {
                         let quotes: &[_] = &['"', '\''];
                         maybe_path.trim().trim_matches(quotes)
                     }
