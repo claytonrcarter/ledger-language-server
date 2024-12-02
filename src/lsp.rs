@@ -133,7 +133,6 @@ impl LanguageServer for Lsp {
                 definition_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
-            ..Default::default()
         })
     }
 
@@ -216,7 +215,7 @@ impl LanguageServer for Lsp {
         // completions or diagnostics (because the buffer may be
         // dirty/incomplete/incorrect)
         let mut state = self.state.lock().await;
-        let content = match params.content_changes.get(0) {
+        let content = match params.content_changes.first() {
             Some(content) => content.text.clone(),
             None => String::new(),
         };
@@ -311,17 +310,15 @@ impl LanguageServer for Lsp {
             .map(|i| match i {
                 // FIXME there is no need to recompute the range of the current node
                 // for each completion; it should be calculated once and reued
-                LedgerCompletion::Account(account) => create_completion(&account, "Account"),
+                LedgerCompletion::Account(account) => create_completion(account, "Account"),
 
-                LedgerCompletion::Directive(directive) => {
-                    create_completion(&directive, "Directive")
-                }
+                LedgerCompletion::Directive(directive) => create_completion(directive, "Directive"),
 
-                LedgerCompletion::File(filename) => create_completion(&filename, "File"),
+                LedgerCompletion::File(filename) => create_completion(filename, "File"),
 
-                LedgerCompletion::Payee(payee) => create_completion(&payee, "Payee"),
+                LedgerCompletion::Payee(payee) => create_completion(payee, "Payee"),
 
-                LedgerCompletion::Period(period) => create_completion(&period, "Period"),
+                LedgerCompletion::Period(period) => create_completion(period, "Period"),
 
                 LedgerCompletion::PeriodSnippet(period) => {
                     let mut completion =
@@ -335,7 +332,7 @@ impl LanguageServer for Lsp {
                     completion
                 }
 
-                LedgerCompletion::Tag(tag) => create_completion(&tag, "Tag"),
+                LedgerCompletion::Tag(tag) => create_completion(tag, "Tag"),
             })
             .collect();
 
@@ -368,8 +365,7 @@ impl LanguageServer for Lsp {
             None => return Ok(None),
         };
 
-        let formatted = match LedgerBackend::format(&source, state.config.format_sort_transactions)
-        {
+        let formatted = match LedgerBackend::format(source, state.config.format_sort_transactions) {
             Ok(formatted) => formatted,
             Err(err) => {
                 log!(self, ERROR, "{err}");
@@ -412,7 +408,7 @@ impl LanguageServer for Lsp {
         let line = source.split('\n').nth(line_num).unwrap_or("");
 
         let path = match line.split_once(' ') {
-            Some((maybe_include, maybe_path)) if maybe_include == "include" => {
+            Some(("include", maybe_path)) => {
                 let quotes: &[_] = &['"', '\''];
                 maybe_path.trim().trim_matches(quotes)
             }

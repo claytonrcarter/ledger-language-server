@@ -22,7 +22,7 @@ async fn main() {
         (Some(arg), Some(file), Some(line), Some(column)) if arg == "--debug" => {
             let file = Path::new(&file).canonicalize().unwrap();
             let file = file.as_os_str().to_str().unwrap();
-            let source = contents_of_path(&file).unwrap();
+            let source = contents_of_path(file).unwrap();
 
             let mut be = LedgerBackend::new();
             be.parse_document(&source);
@@ -30,7 +30,7 @@ async fn main() {
             let mut visited = HashSet::new();
             let completions = be
                 .completions_for_position(
-                    &file,
+                    file,
                     &source,
                     &tower_lsp::lsp_types::Position {
                         line: line.parse().unwrap(),

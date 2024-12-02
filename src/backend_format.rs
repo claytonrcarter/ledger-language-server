@@ -14,6 +14,7 @@ use std::fmt::Display;
 use std::io::Write;
 
 mod ledger {
+    #![allow(clippy::all)]
     include!("./type_sitter/ledger.rs");
 }
 
@@ -79,7 +80,7 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io:
                 Err(err) => match err.cause() {
                     type_sitter::IncorrectKindCause::Error => {
                         // dbg!(substring(content, err.node.range()));
-                        JournalItem::Error(format!("{}", substring(content, err.node.range())))
+                        JournalItem::Error(substring(content, err.node.range()))
                     }
                     type_sitter::IncorrectKindCause::Missing
                     | type_sitter::IncorrectKindCause::OtherKind(_) => JournalItem::Skip,
@@ -101,7 +102,7 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io:
         for journal_item in journal_items.iter() {
             match journal_item {
                 JournalItem::PlainXact(ref t) => {
-                    chunk.items.push(&journal_item);
+                    chunk.items.push(journal_item);
                     chunk.date = t.date.clone();
                     chunks.push(chunk);
                     chunk = SortableChunk::new();
@@ -109,7 +110,7 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io:
                 JournalItem::AutomatedXact(_)
                 | JournalItem::PeriodicXact(_)
                 | JournalItem::Directive(_) => {
-                    chunk.items.push(&journal_item);
+                    chunk.items.push(journal_item);
                     chunks.push(chunk);
                     chunk = SortableChunk::new();
                 }
@@ -117,7 +118,7 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io:
                 | JournalItem::Other(_)
                 | JournalItem::Error(_)
                 | JournalItem::Skip => {
-                    chunk.items.push(&journal_item);
+                    chunk.items.push(journal_item);
                 }
             }
         }
@@ -165,7 +166,7 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io:
             (Some(JournalItem::Comment(prev_comment)), JournalItem::Comment(comment))
                 if prev_comment.range.end_point.row != comment.range.start_point.row =>
             {
-                writeln!(buf, "")?
+                writeln!(buf)?
             }
 
             // preserve gaps between blocks of directives, also group them by
@@ -174,7 +175,7 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io:
                 if prev_directive.range.end_point.row != directive.range.start_point.row
                     || prev_directive.name != directive.name =>
             {
-                writeln!(buf, "")?
+                writeln!(buf)?
             }
 
             // preserve blocks of comments and directives
@@ -196,7 +197,7 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io:
             | (_, JournalItem::PeriodicXact(_))
             | (_, JournalItem::AutomatedXact(_))
             | (Some(_), _) => {
-                writeln!(buf, "")?;
+                writeln!(buf)?;
             }
         }
 
@@ -314,7 +315,7 @@ impl<'tree> Directive {
         let (name, content) = directive_content
             .trim()
             .split_once([' ', '\t'])
-            .unwrap_or_else(|| ("", ""));
+            .unwrap_or(("", ""));
         Self {
             range,
             name: name.to_string(),
@@ -343,14 +344,13 @@ impl<'tree> Directive {
                             d.content = substring(content, account.range());
                         }
                         AccountDirectiveNodes::AccountSubdirective(subdirective) => {
-                            match subdirective.child() {
+                            if let Some(subdirective) = subdirective.child() {
                                 // FIXME consider normalizing/formatting subdirectives depending on thier type?
-                                Some(subdirective) => d.subdirectives.push(Directive::new(
+                                d.subdirectives.push(Directive::new(
                                     subdirective.unwrap().range(),
                                     substring(content, subdirective.unwrap().range()),
-                                )),
-                                None => {}
-                            };
+                                ));
+                            }
                         }
                         AccountDirectiveNodes::Comment(comment) => {
                             if d.subdirectives.is_empty() {
@@ -510,7 +510,7 @@ impl Display for PlainXact {
         if let Some(ref payee_note) = self.payee_note {
             write!(f, " {payee_note}")?;
         }
-        writeln!(f, "")?;
+        writeln!(f)?;
 
         for note in self.notes.iter() {
             writeln!(f, "    {note}")?;
@@ -572,7 +572,7 @@ impl Display for PeriodicXact {
         if let Some(ref interval_note) = self.interval_note {
             write!(f, " {interval_note}")?;
         }
-        writeln!(f, "")?;
+        writeln!(f)?;
 
         for note in self.notes.iter() {
             writeln!(f, "    {note}")?;
@@ -633,7 +633,7 @@ impl Display for AutomatedXact {
         if let Some(ref query_note) = self.query_note {
             write!(f, " {query_note}")?;
         }
-        writeln!(f, "")?;
+        writeln!(f)?;
 
         for note in self.notes.iter() {
             writeln!(f, "    {note}")?;
@@ -719,7 +719,7 @@ impl Display for Posting {
             0
         } else {
             // try to align to 48 chars, unless account name is too long
-            let width = 48usize.checked_sub(self.account.len()).unwrap_or(0);
+            let width = 48usize.saturating_sub(self.account.len());
             width.max(2 + amount.len())
         };
 
@@ -732,7 +732,7 @@ impl Display for Posting {
         if let Some(ref note) = self.inline_note {
             write!(f, "{}{note}", if amount.is_empty() { "  " } else { " " })?;
         }
-        writeln!(f, "",)?;
+        writeln!(f)?;
 
         for note in self.trailing_notes.iter() {
             writeln!(f, "    {note}")?;
