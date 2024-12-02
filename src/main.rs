@@ -43,10 +43,11 @@ async fn main() {
 
             return;
         }
-        (_, _, _, _) => {}
+        (Some(arg), _, _, _) if arg == "lsp" => lsp::run_server().await,
+        (_, _, _, _) => {
+            eprintln!("Usage: ledger-language-server lsp => run the LSP server using stdin/stdout");
+        }
     }
-
-    lsp::run_server().await;
 }
 
 /// path must be canonicalize-able; either canonical on it's own, or valid
