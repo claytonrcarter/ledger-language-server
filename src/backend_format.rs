@@ -381,16 +381,13 @@ impl<'tree> Directive {
                             }
                         }
                         AccountDirectiveNodes::Comment(comment) => {
-                            if d.subdirectives.is_empty() {
-                                d.comments.push(substring(content, comment.range()));
-                            } else {
-                                // FIXME can we use in-place manipulation of the last() slice element
-                                #[allow(clippy::unwrap_used)]
-                                let mut subdirective = d.subdirectives.pop().unwrap();
-                                subdirective
-                                    .comments
-                                    .push(substring(content, comment.range()));
-                                d.subdirectives.push(subdirective);
+                            match d.subdirectives.as_mut_slice() {
+                                [last_subdirective] | [.., last_subdirective] => {
+                                    last_subdirective
+                                        .comments
+                                        .push(substring(content, comment.range()));
+                                }
+                                [] => d.comments.push(substring(content, comment.range())),
                             }
                         }
                     }
@@ -490,16 +487,13 @@ impl<'tree> PlainXact {
                 XactFields::Note(note) => {
                     if note.range().start_point.row == x.range.start_point.row {
                         x.payee_note = Some(substring(content, note.range()));
-                    } else if !x.postings.is_empty() {
-                        // FIXME can we use in-place manipulation of the last() slice element
-                        #[allow(clippy::unwrap_used)]
-                        let mut posting = x.postings.pop().unwrap();
-                        posting
-                            .trailing_notes
-                            .push(substring(content, note.range()));
-                        x.postings.push(posting);
                     } else {
-                        x.notes.push(substring(content, note.range()));
+                        match x.postings.as_mut_slice() {
+                            [last_posting] | [.., last_posting] => last_posting
+                                .trailing_notes
+                                .push(substring(content, note.range())),
+                            [] => x.notes.push(substring(content, note.range())),
+                        }
                     }
                 }
                 XactFields::Payee(payee) => {
