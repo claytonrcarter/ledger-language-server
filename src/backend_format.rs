@@ -841,7 +841,7 @@ struct SortableChunk<'a> {
     // items: Vec<&'a LedgerItem>,
 }
 
-impl<'a> SortableChunk<'a> {
+impl SortableChunk<'_> {
     fn new() -> Self {
         Self {
             date: None,
@@ -850,7 +850,7 @@ impl<'a> SortableChunk<'a> {
     }
 }
 
-impl<'a> Ord for SortableChunk<'a> {
+impl Ord for SortableChunk<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         match (&self.date, &other.date) {
             (Some(self_date), Some(other_date)) => self_date.cmp(other_date),
@@ -865,7 +865,7 @@ impl<'a> Ord for SortableChunk<'a> {
     }
 }
 
-impl<'a> PartialOrd for SortableChunk<'a> {
+impl PartialOrd for SortableChunk<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
