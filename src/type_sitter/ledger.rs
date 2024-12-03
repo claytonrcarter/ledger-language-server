@@ -11,7 +11,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Account<'tree> {
     type WithLifetime<'a> = Account<'a>;
     const KIND: &'static str = "account";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "account" {
             Ok(Self(node))
         } else {
@@ -43,35 +45,19 @@ impl<'tree> ::type_sitter::Node<'tree> for Account<'tree> {
 pub struct AccountDirective<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> AccountDirective<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{account | account_subdirective | comment}+`:\n\n- [`Account`]\n- [`AccountSubdirective`]\n- [`Comment`]\n"]
-    #[doc = "\n\nThis is guaranteed to return at least one child."]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<
-            'tree,
-            anon_unions::Account_AccountSubdirective_Comment<'tree>,
-        >,
-    > + 'a {
-        ::type_sitter::Node::raw(self)
-            .named_children(&mut c.0)
-            .filter(|n| !n.is_extra())
-            .map(
-                <anon_unions::Account_AccountSubdirective_Comment<'tree> as ::type_sitter::Node<
-                    'tree,
-                >>::try_from_raw,
-            )
-    }
+impl<'tree> AccountDirective<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for AccountDirective<'tree> {
+    type Child = anon_unions::Account_AccountSubdirective_Comment<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for AccountDirective<'tree> {
     type WithLifetime<'a> = AccountDirective<'a>;
     const KIND: &'static str = "account_directive";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "account_directive" {
             Ok(Self(node))
         } else {
@@ -103,18 +89,19 @@ impl<'tree> ::type_sitter::Node<'tree> for AccountDirective<'tree> {
 pub struct AccountSubdirective<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> AccountSubdirective<'tree> {
-    #[doc = "Get the node's only not-extra named child, if it has one.\n\nThis child has type `{alias_subdirective | assert_subdirective | check_subdirective | default_subdirective | note_subdirective}?`:\n\n- [`AliasSubdirective`]\n- [`AssertSubdirective`]\n- [`CheckSubdirective`]\n- [`DefaultSubdirective`]\n- [`NoteSubdirective`]\n"]
-    #[inline]    pub fn child (& self) -> :: std :: option :: Option < :: type_sitter :: NodeResult < 'tree , anon_unions :: AliasSubdirective_AssertSubdirective_CheckSubdirective_DefaultSubdirective_NoteSubdirective < 'tree > > >{
-        (0 .. :: type_sitter :: Node :: raw (self) . named_child_count ()) . map (| i | :: type_sitter :: Node :: raw (self) . named_child (i) . unwrap ()) . filter (| n | ! n . is_extra ()) . next () . map (< anon_unions :: AliasSubdirective_AssertSubdirective_CheckSubdirective_DefaultSubdirective_NoteSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw)
-    }
+impl<'tree> AccountSubdirective<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasOptionalChild<'tree> for AccountSubdirective<'tree> {
+    type Child = anon_unions :: AliasSubdirective_AssertSubdirective_CheckSubdirective_DefaultSubdirective_NoteSubdirective < 'tree > ;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for AccountSubdirective<'tree> {
     type WithLifetime<'a> = AccountSubdirective<'a>;
     const KIND: &'static str = "account_subdirective";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "account_subdirective" {
             Ok(Self(node))
         } else {
@@ -152,7 +139,9 @@ impl<'tree> ::type_sitter::Node<'tree> for AliasSubdirective<'tree> {
     type WithLifetime<'a> = AliasSubdirective<'a>;
     const KIND: &'static str = "alias_subdirective";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "alias_subdirective" {
             Ok(Self(node))
         } else {
@@ -184,35 +173,19 @@ impl<'tree> ::type_sitter::Node<'tree> for AliasSubdirective<'tree> {
 pub struct Amount<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> Amount<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{commodity | negative_quantity | quantity}+`:\n\n- [`Commodity`]\n- [`NegativeQuantity`]\n- [`Quantity`]\n"]
-    #[doc = "\n\nThis is guaranteed to return at least one child."]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<
-            'tree,
-            anon_unions::Commodity_NegativeQuantity_Quantity<'tree>,
-        >,
-    > + 'a {
-        ::type_sitter::Node::raw(self)
-            .named_children(&mut c.0)
-            .filter(|n| !n.is_extra())
-            .map(
-                <anon_unions::Commodity_NegativeQuantity_Quantity<'tree> as ::type_sitter::Node<
-                    'tree,
-                >>::try_from_raw,
-            )
-    }
+impl<'tree> Amount<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for Amount<'tree> {
+    type Child = anon_unions::Commodity_NegativeQuantity_Quantity<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for Amount<'tree> {
     type WithLifetime<'a> = Amount<'a>;
     const KIND: &'static str = "amount";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "amount" {
             Ok(Self(node))
         } else {
@@ -250,7 +223,9 @@ impl<'tree> ::type_sitter::Node<'tree> for AssertSubdirective<'tree> {
     type WithLifetime<'a> = AssertSubdirective<'a>;
     const KIND: &'static str = "assert_subdirective";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "assert_subdirective" {
             Ok(Self(node))
         } else {
@@ -282,25 +257,19 @@ impl<'tree> ::type_sitter::Node<'tree> for AssertSubdirective<'tree> {
 pub struct AutomatedXact<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> AutomatedXact<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{note | posting | query}+`:\n\n- [`Note`]\n- [`Posting`]\n- [`Query`]\n"]
-    #[doc = "\n\nThis is guaranteed to return at least one child."]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<'tree, anon_unions::Note_Posting_Query<'tree>>,
-    > + 'a {
-        :: type_sitter :: Node :: raw (self) . named_children (& mut c . 0) . filter (| n | ! n . is_extra ()) . map (< anon_unions :: Note_Posting_Query < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw)
-    }
+impl<'tree> AutomatedXact<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for AutomatedXact<'tree> {
+    type Child = anon_unions::Note_Posting_Query<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for AutomatedXact<'tree> {
     type WithLifetime<'a> = AutomatedXact<'a>;
     const KIND: &'static str = "automated_xact";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "automated_xact" {
             Ok(Self(node))
         } else {
@@ -347,11 +316,17 @@ impl<'tree> BalanceAssertion<'tree> {
     }
 }
 #[automatically_derived]
+impl<'tree> ::type_sitter::HasChild<'tree> for BalanceAssertion<'tree> {
+    type Child = Amount<'tree>;
+}
+#[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for BalanceAssertion<'tree> {
     type WithLifetime<'a> = BalanceAssertion<'a>;
     const KIND: &'static str = "balance_assertion";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "balance_assertion" {
             Ok(Self(node))
         } else {
@@ -389,7 +364,9 @@ impl<'tree> ::type_sitter::Node<'tree> for BlockComment<'tree> {
     type WithLifetime<'a> = BlockComment<'a>;
     const KIND: &'static str = "block_comment";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "block_comment" {
             Ok(Self(node))
         } else {
@@ -421,27 +398,19 @@ impl<'tree> ::type_sitter::Node<'tree> for BlockComment<'tree> {
 pub struct CharDirective<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> CharDirective<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{account | amount | check_in | check_out | commodity | date}*`:\n\n- [`Account`]\n- [`Amount`]\n- [`CheckIn`]\n- [`CheckOut`]\n- [`Commodity`]\n- [`Date`]\n"]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<
-            'tree,
-            anon_unions::Account_Amount_CheckIn_CheckOut_Commodity_Date<'tree>,
-        >,
-    > + 'a {
-        :: type_sitter :: Node :: raw (self) . named_children (& mut c . 0) . filter (| n | ! n . is_extra ()) . map (< anon_unions :: Account_Amount_CheckIn_CheckOut_Commodity_Date < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw)
-    }
+impl<'tree> CharDirective<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for CharDirective<'tree> {
+    type Child = anon_unions::Account_Amount_CheckIn_CheckOut_Commodity_Date<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for CharDirective<'tree> {
     type WithLifetime<'a> = CharDirective<'a>;
     const KIND: &'static str = "char_directive";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "char_directive" {
             Ok(Self(node))
         } else {
@@ -473,25 +442,19 @@ impl<'tree> ::type_sitter::Node<'tree> for CharDirective<'tree> {
 pub struct CheckIn<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> CheckIn<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{account | date | payee | time}+`:\n\n- [`Account`]\n- [`Date`]\n- [`Payee`]\n- [`Time`]\n"]
-    #[doc = "\n\nThis is guaranteed to return at least one child."]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<'tree, anon_unions::Account_Date_Payee_Time<'tree>>,
-    > + 'a {
-        :: type_sitter :: Node :: raw (self) . named_children (& mut c . 0) . filter (| n | ! n . is_extra ()) . map (< anon_unions :: Account_Date_Payee_Time < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw)
-    }
+impl<'tree> CheckIn<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for CheckIn<'tree> {
+    type Child = anon_unions::Account_Date_Payee_Time<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for CheckIn<'tree> {
     type WithLifetime<'a> = CheckIn<'a>;
     const KIND: &'static str = "check_in";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "check_in" {
             Ok(Self(node))
         } else {
@@ -523,28 +486,19 @@ impl<'tree> ::type_sitter::Node<'tree> for CheckIn<'tree> {
 pub struct CheckOut<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> CheckOut<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{date | time}+`:\n\n- [`Date`]\n- [`Time`]\n"]
-    #[doc = "\n\nThis is guaranteed to return at least one child."]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<'tree, anon_unions::Date_Time<'tree>>,
-    > + 'a {
-        ::type_sitter::Node::raw(self)
-            .named_children(&mut c.0)
-            .filter(|n| !n.is_extra())
-            .map(<anon_unions::Date_Time<'tree> as ::type_sitter::Node<'tree>>::try_from_raw)
-    }
+impl<'tree> CheckOut<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for CheckOut<'tree> {
+    type Child = anon_unions::Date_Time<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for CheckOut<'tree> {
     type WithLifetime<'a> = CheckOut<'a>;
     const KIND: &'static str = "check_out";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "check_out" {
             Ok(Self(node))
         } else {
@@ -582,7 +536,9 @@ impl<'tree> ::type_sitter::Node<'tree> for CheckSubdirective<'tree> {
     type WithLifetime<'a> = CheckSubdirective<'a>;
     const KIND: &'static str = "check_subdirective";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "check_subdirective" {
             Ok(Self(node))
         } else {
@@ -620,7 +576,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Code<'tree> {
     type WithLifetime<'a> = Code<'a>;
     const KIND: &'static str = "code";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "code" {
             Ok(Self(node))
         } else {
@@ -658,7 +616,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Comment<'tree> {
     type WithLifetime<'a> = Comment<'a>;
     const KIND: &'static str = "comment";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "comment" {
             Ok(Self(node))
         } else {
@@ -696,7 +656,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Commodity<'tree> {
     type WithLifetime<'a> = Commodity<'a>;
     const KIND: &'static str = "commodity";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "commodity" {
             Ok(Self(node))
         } else {
@@ -728,28 +690,19 @@ impl<'tree> ::type_sitter::Node<'tree> for Commodity<'tree> {
 pub struct CommodityDirective<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> CommodityDirective<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{comment | commodity | commodity_subdirective}+`:\n\n- [`Comment`]\n- [`Commodity`]\n- [`CommoditySubdirective`]\n"]
-    #[doc = "\n\nThis is guaranteed to return at least one child."]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<
-            'tree,
-            anon_unions::Comment_Commodity_CommoditySubdirective<'tree>,
-        >,
-    > + 'a {
-        :: type_sitter :: Node :: raw (self) . named_children (& mut c . 0) . filter (| n | ! n . is_extra ()) . map (< anon_unions :: Comment_Commodity_CommoditySubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw)
-    }
+impl<'tree> CommodityDirective<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for CommodityDirective<'tree> {
+    type Child = anon_unions::Comment_Commodity_CommoditySubdirective<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for CommodityDirective<'tree> {
     type WithLifetime<'a> = CommodityDirective<'a>;
     const KIND: &'static str = "commodity_directive";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "commodity_directive" {
             Ok(Self(node))
         } else {
@@ -781,28 +734,22 @@ impl<'tree> ::type_sitter::Node<'tree> for CommodityDirective<'tree> {
 pub struct CommoditySubdirective<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> CommoditySubdirective<'tree> {
-    #[doc = "Get the node's only not-extra named child, if it has one.\n\nThis child has type `{alias_subdirective | default_subdirective | format_subdirective | note_subdirective}?`:\n\n- [`AliasSubdirective`]\n- [`DefaultSubdirective`]\n- [`FormatSubdirective`]\n- [`NoteSubdirective`]\n"]
-    #[inline]
-    pub fn child(
-        &self,
-    ) -> ::std::option::Option<
-        ::type_sitter::NodeResult<
+impl<'tree> CommoditySubdirective<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasOptionalChild<'tree> for CommoditySubdirective<'tree> {
+    type Child =
+        anon_unions::AliasSubdirective_DefaultSubdirective_FormatSubdirective_NoteSubdirective<
             'tree,
-            anon_unions::AliasSubdirective_DefaultSubdirective_FormatSubdirective_NoteSubdirective<
-                'tree,
-            >,
-        >,
-    > {
-        (0 .. :: type_sitter :: Node :: raw (self) . named_child_count ()) . map (| i | :: type_sitter :: Node :: raw (self) . named_child (i) . unwrap ()) . filter (| n | ! n . is_extra ()) . next () . map (< anon_unions :: AliasSubdirective_DefaultSubdirective_FormatSubdirective_NoteSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw)
-    }
+        >;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for CommoditySubdirective<'tree> {
     type WithLifetime<'a> = CommoditySubdirective<'a>;
     const KIND: &'static str = "commodity_subdirective";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "commodity_subdirective" {
             Ok(Self(node))
         } else {
@@ -840,7 +787,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Date<'tree> {
     type WithLifetime<'a> = Date<'a>;
     const KIND: &'static str = "date";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "date" {
             Ok(Self(node))
         } else {
@@ -878,7 +827,9 @@ impl<'tree> ::type_sitter::Node<'tree> for DateSpec<'tree> {
     type WithLifetime<'a> = DateSpec<'a>;
     const KIND: &'static str = "date_spec";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "date_spec" {
             Ok(Self(node))
         } else {
@@ -916,7 +867,9 @@ impl<'tree> ::type_sitter::Node<'tree> for DefaultSubdirective<'tree> {
     type WithLifetime<'a> = DefaultSubdirective<'a>;
     const KIND: &'static str = "default_subdirective";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "default_subdirective" {
             Ok(Self(node))
         } else {
@@ -948,18 +901,19 @@ impl<'tree> ::type_sitter::Node<'tree> for DefaultSubdirective<'tree> {
 pub struct Directive<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> Directive<'tree> {
-    #[doc = "Get the node's only not-extra named child.\n\nThis child has type `{account_directive | char_directive | commodity_directive | option | tag_directive | word_directive}`:\n\n- [`AccountDirective`]\n- [`CharDirective`]\n- [`CommodityDirective`]\n- [`Option`]\n- [`TagDirective`]\n- [`WordDirective`]\n"]
-    #[inline]    pub fn child (& self) -> :: type_sitter :: NodeResult < 'tree , anon_unions :: AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective < 'tree > >{
-        (0 .. :: type_sitter :: Node :: raw (self) . named_child_count ()) . map (| i | :: type_sitter :: Node :: raw (self) . named_child (i) . unwrap ()) . filter (| n | ! n . is_extra ()) . next () . map (< anon_unions :: AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw) . expect ("required child not present, there should at least be a MISSING node in its place")
-    }
+impl<'tree> Directive<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChild<'tree> for Directive<'tree> {
+    type Child = anon_unions :: AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective < 'tree > ;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for Directive<'tree> {
     type WithLifetime<'a> = Directive<'a>;
     const KIND: &'static str = "directive";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "directive" {
             Ok(Self(node))
         } else {
@@ -997,7 +951,9 @@ impl<'tree> ::type_sitter::Node<'tree> for EffectiveDate<'tree> {
     type WithLifetime<'a> = EffectiveDate<'a>;
     const KIND: &'static str = "effective_date";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "effective_date" {
             Ok(Self(node))
         } else {
@@ -1035,7 +991,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Filename<'tree> {
     type WithLifetime<'a> = Filename<'a>;
     const KIND: &'static str = "filename";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "filename" {
             Ok(Self(node))
         } else {
@@ -1082,11 +1040,17 @@ impl<'tree> FormatSubdirective<'tree> {
     }
 }
 #[automatically_derived]
+impl<'tree> ::type_sitter::HasChild<'tree> for FormatSubdirective<'tree> {
+    type Child = Amount<'tree>;
+}
+#[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for FormatSubdirective<'tree> {
     type WithLifetime<'a> = FormatSubdirective<'a>;
     const KIND: &'static str = "format_subdirective";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "format_subdirective" {
             Ok(Self(node))
         } else {
@@ -1133,11 +1097,17 @@ impl<'tree> Interval<'tree> {
     }
 }
 #[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for Interval<'tree> {
+    type Child = DateSpec<'tree>;
+}
+#[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for Interval<'tree> {
     type WithLifetime<'a> = Interval<'a>;
     const KIND: &'static str = "interval";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "interval" {
             Ok(Self(node))
         } else {
@@ -1169,24 +1139,19 @@ impl<'tree> ::type_sitter::Node<'tree> for Interval<'tree> {
 pub struct JournalItem<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> JournalItem<'tree> {
-    #[doc = "Get the node's only not-extra named child.\n\nThis child has type `{block_comment | comment | directive | test | xact}`:\n\n- [`BlockComment`]\n- [`Comment`]\n- [`Directive`]\n- [`Test`]\n- [`Xact`]\n"]
-    #[inline]
-    pub fn child(
-        &self,
-    ) -> ::type_sitter::NodeResult<
-        'tree,
-        anon_unions::BlockComment_Comment_Directive_Test_Xact<'tree>,
-    > {
-        (0 .. :: type_sitter :: Node :: raw (self) . named_child_count ()) . map (| i | :: type_sitter :: Node :: raw (self) . named_child (i) . unwrap ()) . filter (| n | ! n . is_extra ()) . next () . map (< anon_unions :: BlockComment_Comment_Directive_Test_Xact < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw) . expect ("required child not present, there should at least be a MISSING node in its place")
-    }
+impl<'tree> JournalItem<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChild<'tree> for JournalItem<'tree> {
+    type Child = anon_unions::BlockComment_Comment_Directive_Test_Xact<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for JournalItem<'tree> {
     type WithLifetime<'a> = JournalItem<'a>;
     const KIND: &'static str = "journal_item";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "journal_item" {
             Ok(Self(node))
         } else {
@@ -1233,11 +1198,17 @@ impl<'tree> LotPrice<'tree> {
     }
 }
 #[automatically_derived]
+impl<'tree> ::type_sitter::HasChild<'tree> for LotPrice<'tree> {
+    type Child = Amount<'tree>;
+}
+#[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for LotPrice<'tree> {
     type WithLifetime<'a> = LotPrice<'a>;
     const KIND: &'static str = "lot_price";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "lot_price" {
             Ok(Self(node))
         } else {
@@ -1275,7 +1246,9 @@ impl<'tree> ::type_sitter::Node<'tree> for NegativeQuantity<'tree> {
     type WithLifetime<'a> = NegativeQuantity<'a>;
     const KIND: &'static str = "negative_quantity";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "negative_quantity" {
             Ok(Self(node))
         } else {
@@ -1321,11 +1294,17 @@ impl<'tree> Note<'tree> {
     }
 }
 #[automatically_derived]
+impl<'tree> ::type_sitter::HasOptionalChild<'tree> for Note<'tree> {
+    type Child = EffectiveDate<'tree>;
+}
+#[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for Note<'tree> {
     type WithLifetime<'a> = Note<'a>;
     const KIND: &'static str = "note";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "note" {
             Ok(Self(node))
         } else {
@@ -1363,7 +1342,9 @@ impl<'tree> ::type_sitter::Node<'tree> for NoteSubdirective<'tree> {
     type WithLifetime<'a> = NoteSubdirective<'a>;
     const KIND: &'static str = "note_subdirective";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "note_subdirective" {
             Ok(Self(node))
         } else {
@@ -1409,11 +1390,17 @@ impl<'tree> Option<'tree> {
     }
 }
 #[automatically_derived]
+impl<'tree> ::type_sitter::HasOptionalChild<'tree> for Option<'tree> {
+    type Child = OptionValue<'tree>;
+}
+#[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for Option<'tree> {
     type WithLifetime<'a> = Option<'a>;
     const KIND: &'static str = "option";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "option" {
             Ok(Self(node))
         } else {
@@ -1451,7 +1438,9 @@ impl<'tree> ::type_sitter::Node<'tree> for OptionValue<'tree> {
     type WithLifetime<'a> = OptionValue<'a>;
     const KIND: &'static str = "option_value";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "option_value" {
             Ok(Self(node))
         } else {
@@ -1489,7 +1478,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Payee<'tree> {
     type WithLifetime<'a> = Payee<'a>;
     const KIND: &'static str = "payee";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "payee" {
             Ok(Self(node))
         } else {
@@ -1521,25 +1512,19 @@ impl<'tree> ::type_sitter::Node<'tree> for Payee<'tree> {
 pub struct PeriodicXact<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> PeriodicXact<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{interval | note | posting}+`:\n\n- [`Interval`]\n- [`Note`]\n- [`Posting`]\n"]
-    #[doc = "\n\nThis is guaranteed to return at least one child."]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<'tree, anon_unions::Interval_Note_Posting<'tree>>,
-    > + 'a {
-        :: type_sitter :: Node :: raw (self) . named_children (& mut c . 0) . filter (| n | ! n . is_extra ()) . map (< anon_unions :: Interval_Note_Posting < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw)
-    }
+impl<'tree> PeriodicXact<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for PeriodicXact<'tree> {
+    type Child = anon_unions::Interval_Note_Posting<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for PeriodicXact<'tree> {
     type WithLifetime<'a> = PeriodicXact<'a>;
     const KIND: &'static str = "periodic_xact";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "periodic_xact" {
             Ok(Self(node))
         } else {
@@ -1571,28 +1556,19 @@ impl<'tree> ::type_sitter::Node<'tree> for PeriodicXact<'tree> {
 pub struct PlainXact<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> PlainXact<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{code | date | effective_date | note | payee | posting | status}+`:\n\n- [`Code`]\n- [`Date`]\n- [`EffectiveDate`]\n- [`Note`]\n- [`Payee`]\n- [`Posting`]\n- [`Status`]\n"]
-    #[doc = "\n\nThis is guaranteed to return at least one child."]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<
-            'tree,
-            anon_unions::Code_Date_EffectiveDate_Note_Payee_Posting_Status<'tree>,
-        >,
-    > + 'a {
-        :: type_sitter :: Node :: raw (self) . named_children (& mut c . 0) . filter (| n | ! n . is_extra ()) . map (< anon_unions :: Code_Date_EffectiveDate_Note_Payee_Posting_Status < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw)
-    }
+impl<'tree> PlainXact<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for PlainXact<'tree> {
+    type Child = anon_unions::Code_Date_EffectiveDate_Note_Payee_Posting_Status<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for PlainXact<'tree> {
     type WithLifetime<'a> = PlainXact<'a>;
     const KIND: &'static str = "plain_xact";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "plain_xact" {
             Ok(Self(node))
         } else {
@@ -1624,28 +1600,19 @@ impl<'tree> ::type_sitter::Node<'tree> for PlainXact<'tree> {
 pub struct Posting<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> Posting<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{account | amount | balance_assertion | lot_price | note | price | status}+`:\n\n- [`Account`]\n- [`Amount`]\n- [`BalanceAssertion`]\n- [`LotPrice`]\n- [`Note`]\n- [`Price`]\n- [`Status`]\n"]
-    #[doc = "\n\nThis is guaranteed to return at least one child."]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<
-            'tree,
-            anon_unions::Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status<'tree>,
-        >,
-    > + 'a {
-        :: type_sitter :: Node :: raw (self) . named_children (& mut c . 0) . filter (| n | ! n . is_extra ()) . map (< anon_unions :: Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw)
-    }
+impl<'tree> Posting<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for Posting<'tree> {
+    type Child = anon_unions::Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for Posting<'tree> {
     type WithLifetime<'a> = Posting<'a>;
     const KIND: &'static str = "posting";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "posting" {
             Ok(Self(node))
         } else {
@@ -1692,11 +1659,17 @@ impl<'tree> Price<'tree> {
     }
 }
 #[automatically_derived]
+impl<'tree> ::type_sitter::HasChild<'tree> for Price<'tree> {
+    type Child = Amount<'tree>;
+}
+#[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for Price<'tree> {
     type WithLifetime<'a> = Price<'a>;
     const KIND: &'static str = "price";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "price" {
             Ok(Self(node))
         } else {
@@ -1734,7 +1707,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Quantity<'tree> {
     type WithLifetime<'a> = Quantity<'a>;
     const KIND: &'static str = "quantity";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "quantity" {
             Ok(Self(node))
         } else {
@@ -1772,7 +1747,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Query<'tree> {
     type WithLifetime<'a> = Query<'a>;
     const KIND: &'static str = "query";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "query" {
             Ok(Self(node))
         } else {
@@ -1819,11 +1796,17 @@ impl<'tree> SourceFile<'tree> {
     }
 }
 #[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for SourceFile<'tree> {
+    type Child = JournalItem<'tree>;
+}
+#[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for SourceFile<'tree> {
     type WithLifetime<'a> = SourceFile<'a>;
     const KIND: &'static str = "source_file";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "source_file" {
             Ok(Self(node))
         } else {
@@ -1861,7 +1844,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Status<'tree> {
     type WithLifetime<'a> = Status<'a>;
     const KIND: &'static str = "status";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "status" {
             Ok(Self(node))
         } else {
@@ -1893,27 +1878,19 @@ impl<'tree> ::type_sitter::Node<'tree> for Status<'tree> {
 pub struct TagDirective<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> TagDirective<'tree> {
-    #[doc = "Get the node's not-extra named children.\n\nThese children have type `{assert_subdirective | check_subdirective | comment}*`:\n\n- [`AssertSubdirective`]\n- [`CheckSubdirective`]\n- [`Comment`]\n"]
-    #[inline]
-    pub fn children<'a>(
-        &self,
-        c: &'a mut ::type_sitter::TreeCursor<'tree>,
-    ) -> impl ::std::iter::Iterator<
-        Item = ::type_sitter::NodeResult<
-            'tree,
-            anon_unions::AssertSubdirective_CheckSubdirective_Comment<'tree>,
-        >,
-    > + 'a {
-        :: type_sitter :: Node :: raw (self) . named_children (& mut c . 0) . filter (| n | ! n . is_extra ()) . map (< anon_unions :: AssertSubdirective_CheckSubdirective_Comment < 'tree > as :: type_sitter :: Node < 'tree >> :: try_from_raw)
-    }
+impl<'tree> TagDirective<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for TagDirective<'tree> {
+    type Child = anon_unions::AssertSubdirective_CheckSubdirective_Comment<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for TagDirective<'tree> {
     type WithLifetime<'a> = TagDirective<'a>;
     const KIND: &'static str = "tag_directive";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "tag_directive" {
             Ok(Self(node))
         } else {
@@ -1951,7 +1928,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Test<'tree> {
     type WithLifetime<'a> = Test<'a>;
     const KIND: &'static str = "test";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "test" {
             Ok(Self(node))
         } else {
@@ -1989,7 +1968,9 @@ impl<'tree> ::type_sitter::Node<'tree> for Time<'tree> {
     type WithLifetime<'a> = Time<'a>;
     const KIND: &'static str = "time";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "time" {
             Ok(Self(node))
         } else {
@@ -2021,26 +2002,19 @@ impl<'tree> ::type_sitter::Node<'tree> for Time<'tree> {
 pub struct WordDirective<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> WordDirective<'tree> {
-    #[doc = "Get the node's only not-extra named child, if it has one.\n\nThis child has type `{account | filename}?`:\n\n- [`Account`]\n- [`Filename`]\n"]
-    #[inline]
-    pub fn child(
-        &self,
-    ) -> ::std::option::Option<::type_sitter::NodeResult<'tree, anon_unions::Account_Filename<'tree>>>
-    {
-        (0..::type_sitter::Node::raw(self).named_child_count())
-            .map(|i| ::type_sitter::Node::raw(self).named_child(i).unwrap())
-            .filter(|n| !n.is_extra())
-            .next()
-            .map(<anon_unions::Account_Filename<'tree> as ::type_sitter::Node<'tree>>::try_from_raw)
-    }
+impl<'tree> WordDirective<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasOptionalChild<'tree> for WordDirective<'tree> {
+    type Child = anon_unions::Account_Filename<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for WordDirective<'tree> {
     type WithLifetime<'a> = WordDirective<'a>;
     const KIND: &'static str = "word_directive";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "word_directive" {
             Ok(Self(node))
         } else {
@@ -2072,33 +2046,19 @@ impl<'tree> ::type_sitter::Node<'tree> for WordDirective<'tree> {
 pub struct Xact<'tree>(::type_sitter::raw::Node<'tree>);
 #[automatically_derived]
 #[allow(unused)]
-impl<'tree> Xact<'tree> {
-    #[doc = "Get the node's only not-extra named child.\n\nThis child has type `{automated_xact | periodic_xact | plain_xact}`:\n\n- [`AutomatedXact`]\n- [`PeriodicXact`]\n- [`PlainXact`]\n"]
-    #[inline]
-    pub fn child(
-        &self,
-    ) -> ::type_sitter::NodeResult<'tree, anon_unions::AutomatedXact_PeriodicXact_PlainXact<'tree>>
-    {
-        (0..::type_sitter::Node::raw(self).named_child_count())
-            .map(|i| ::type_sitter::Node::raw(self).named_child(i).unwrap())
-            .filter(|n| !n.is_extra())
-            .next()
-            .map(
-                <anon_unions::AutomatedXact_PeriodicXact_PlainXact<'tree> as ::type_sitter::Node<
-                    'tree,
-                >>::try_from_raw,
-            )
-            .expect(
-                "required child not present, there should at least be a MISSING node in its place",
-            )
-    }
+impl<'tree> Xact<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChild<'tree> for Xact<'tree> {
+    type Child = anon_unions::AutomatedXact_PeriodicXact_PlainXact<'tree>;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for Xact<'tree> {
     type WithLifetime<'a> = Xact<'a>;
     const KIND: &'static str = "xact";
     #[inline]
-    fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
         if node.kind() == "xact" {
             Ok(Self(node))
         } else {
@@ -2139,7 +2099,9 @@ pub mod unnamed {
         type WithLifetime<'a> = __<'a>;
         const KIND: &'static str = "";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "" {
                 Ok(Self(node))
             } else {
@@ -2177,7 +2139,9 @@ pub mod unnamed {
         type WithLifetime<'a> = A<'a>;
         const KIND: &'static str = "A";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "A" {
                 Ok(Self(node))
             } else {
@@ -2215,7 +2179,9 @@ pub mod unnamed {
         type WithLifetime<'a> = C<'a>;
         const KIND: &'static str = "C";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "C" {
                 Ok(Self(node))
             } else {
@@ -2253,7 +2219,9 @@ pub mod unnamed {
         type WithLifetime<'a> = D<'a>;
         const KIND: &'static str = "D";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "D" {
                 Ok(Self(node))
             } else {
@@ -2291,7 +2259,9 @@ pub mod unnamed {
         type WithLifetime<'a> = I<'a>;
         const KIND: &'static str = "I";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "I" {
                 Ok(Self(node))
             } else {
@@ -2329,7 +2299,9 @@ pub mod unnamed {
         type WithLifetime<'a> = N<'a>;
         const KIND: &'static str = "N";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "N" {
                 Ok(Self(node))
             } else {
@@ -2367,7 +2339,9 @@ pub mod unnamed {
         type WithLifetime<'a> = O<'a>;
         const KIND: &'static str = "O";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "O" {
                 Ok(Self(node))
             } else {
@@ -2405,7 +2379,9 @@ pub mod unnamed {
         type WithLifetime<'a> = P<'a>;
         const KIND: &'static str = "P";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "P" {
                 Ok(Self(node))
             } else {
@@ -2443,7 +2419,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Y<'a>;
         const KIND: &'static str = "Y";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "Y" {
                 Ok(Self(node))
             } else {
@@ -2481,7 +2459,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Account<'a>;
         const KIND: &'static str = "account";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "account" {
                 Ok(Self(node))
             } else {
@@ -2519,7 +2499,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Alias<'a>;
         const KIND: &'static str = "alias";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "alias" {
                 Ok(Self(node))
             } else {
@@ -2557,7 +2539,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Assert<'a>;
         const KIND: &'static str = "assert";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "assert" {
                 Ok(Self(node))
             } else {
@@ -2595,7 +2579,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Bucket<'a>;
         const KIND: &'static str = "bucket";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "bucket" {
                 Ok(Self(node))
             } else {
@@ -2633,7 +2619,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Check<'a>;
         const KIND: &'static str = "check";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "check" {
                 Ok(Self(node))
             } else {
@@ -2671,7 +2659,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Comment<'a>;
         const KIND: &'static str = "comment";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "comment" {
                 Ok(Self(node))
             } else {
@@ -2709,7 +2699,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Commodity<'a>;
         const KIND: &'static str = "commodity";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "commodity" {
                 Ok(Self(node))
             } else {
@@ -2747,7 +2739,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Day<'a>;
         const KIND: &'static str = "day";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "day" {
                 Ok(Self(node))
             } else {
@@ -2785,7 +2779,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Def<'a>;
         const KIND: &'static str = "def";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "def" {
                 Ok(Self(node))
             } else {
@@ -2823,7 +2819,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Default<'a>;
         const KIND: &'static str = "default";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "default" {
                 Ok(Self(node))
             } else {
@@ -2861,7 +2859,9 @@ pub mod unnamed {
         type WithLifetime<'a> = End<'a>;
         const KIND: &'static str = "end";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "end" {
                 Ok(Self(node))
             } else {
@@ -2899,7 +2899,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Eval<'a>;
         const KIND: &'static str = "eval";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "eval" {
                 Ok(Self(node))
             } else {
@@ -2937,7 +2939,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Format<'a>;
         const KIND: &'static str = "format";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "format" {
                 Ok(Self(node))
             } else {
@@ -2975,7 +2979,9 @@ pub mod unnamed {
         type WithLifetime<'a> = I_<'a>;
         const KIND: &'static str = "i";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "i" {
                 Ok(Self(node))
             } else {
@@ -3013,7 +3019,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Include<'a>;
         const KIND: &'static str = "include";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "include" {
                 Ok(Self(node))
             } else {
@@ -3051,7 +3059,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Last<'a>;
         const KIND: &'static str = "last";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "last" {
                 Ok(Self(node))
             } else {
@@ -3089,7 +3099,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Month<'a>;
         const KIND: &'static str = "month";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "month" {
                 Ok(Self(node))
             } else {
@@ -3127,7 +3139,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Next<'a>;
         const KIND: &'static str = "next";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "next" {
                 Ok(Self(node))
             } else {
@@ -3165,7 +3179,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Nomarket<'a>;
         const KIND: &'static str = "nomarket";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "nomarket" {
                 Ok(Self(node))
             } else {
@@ -3203,7 +3219,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Note<'a>;
         const KIND: &'static str = "note";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "note" {
                 Ok(Self(node))
             } else {
@@ -3241,7 +3259,9 @@ pub mod unnamed {
         type WithLifetime<'a> = O_<'a>;
         const KIND: &'static str = "o";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "o" {
                 Ok(Self(node))
             } else {
@@ -3279,7 +3299,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Payee<'a>;
         const KIND: &'static str = "payee";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "payee" {
                 Ok(Self(node))
             } else {
@@ -3317,7 +3339,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Quarter<'a>;
         const KIND: &'static str = "quarter";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "quarter" {
                 Ok(Self(node))
             } else {
@@ -3355,7 +3379,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Tag<'a>;
         const KIND: &'static str = "tag";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "tag" {
                 Ok(Self(node))
             } else {
@@ -3393,7 +3419,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Test<'a>;
         const KIND: &'static str = "test";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "test" {
                 Ok(Self(node))
             } else {
@@ -3431,7 +3459,9 @@ pub mod unnamed {
         type WithLifetime<'a> = This<'a>;
         const KIND: &'static str = "this";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "this" {
                 Ok(Self(node))
             } else {
@@ -3469,7 +3499,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Week<'a>;
         const KIND: &'static str = "week";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "week" {
                 Ok(Self(node))
             } else {
@@ -3507,7 +3539,9 @@ pub mod unnamed {
         type WithLifetime<'a> = Year<'a>;
         const KIND: &'static str = "year";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "year" {
                 Ok(Self(node))
             } else {
@@ -3549,7 +3583,9 @@ pub mod symbols {
         type WithLifetime<'a> = Tab<'a>;
         const KIND: &'static str = "\t";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "\t" {
                 Ok(Self(node))
             } else {
@@ -3587,7 +3623,9 @@ pub mod symbols {
         type WithLifetime<'a> = TabTab<'a>;
         const KIND: &'static str = "\t\t";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "\t\t" {
                 Ok(Self(node))
             } else {
@@ -3625,7 +3663,9 @@ pub mod symbols {
         type WithLifetime<'a> = TabSpace<'a>;
         const KIND: &'static str = "\t ";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "\t " {
                 Ok(Self(node))
             } else {
@@ -3663,7 +3703,9 @@ pub mod symbols {
         type WithLifetime<'a> = Newline<'a>;
         const KIND: &'static str = "\n";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "\n" {
                 Ok(Self(node))
             } else {
@@ -3701,7 +3743,9 @@ pub mod symbols {
         type WithLifetime<'a> = Space<'a>;
         const KIND: &'static str = " ";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == " " {
                 Ok(Self(node))
             } else {
@@ -3739,7 +3783,9 @@ pub mod symbols {
         type WithLifetime<'a> = SpaceTab<'a>;
         const KIND: &'static str = " \t";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == " \t" {
                 Ok(Self(node))
             } else {
@@ -3777,7 +3823,9 @@ pub mod symbols {
         type WithLifetime<'a> = SpaceSpace<'a>;
         const KIND: &'static str = "  ";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "  " {
                 Ok(Self(node))
             } else {
@@ -3815,7 +3863,9 @@ pub mod symbols {
         type WithLifetime<'a> = Not<'a>;
         const KIND: &'static str = "!";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "!" {
                 Ok(Self(node))
             } else {
@@ -3853,7 +3903,9 @@ pub mod symbols {
         type WithLifetime<'a> = LParen<'a>;
         const KIND: &'static str = "(";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "(" {
                 Ok(Self(node))
             } else {
@@ -3891,7 +3943,9 @@ pub mod symbols {
         type WithLifetime<'a> = RParen<'a>;
         const KIND: &'static str = ")";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == ")" {
                 Ok(Self(node))
             } else {
@@ -3929,7 +3983,9 @@ pub mod symbols {
         type WithLifetime<'a> = Mul<'a>;
         const KIND: &'static str = "*";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "*" {
                 Ok(Self(node))
             } else {
@@ -3967,7 +4023,9 @@ pub mod symbols {
         type WithLifetime<'a> = Add<'a>;
         const KIND: &'static str = "+";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "+" {
                 Ok(Self(node))
             } else {
@@ -4005,7 +4063,9 @@ pub mod symbols {
         type WithLifetime<'a> = Sub<'a>;
         const KIND: &'static str = "-";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "-" {
                 Ok(Self(node))
             } else {
@@ -4043,7 +4103,9 @@ pub mod symbols {
         type WithLifetime<'a> = SubSub<'a>;
         const KIND: &'static str = "--";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "--" {
                 Ok(Self(node))
             } else {
@@ -4081,7 +4143,9 @@ pub mod symbols {
         type WithLifetime<'a> = Semicolon<'a>;
         const KIND: &'static str = ";";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == ";" {
                 Ok(Self(node))
             } else {
@@ -4119,7 +4183,9 @@ pub mod symbols {
         type WithLifetime<'a> = Eq<'a>;
         const KIND: &'static str = "=";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "=" {
                 Ok(Self(node))
             } else {
@@ -4157,7 +4223,9 @@ pub mod symbols {
         type WithLifetime<'a> = At<'a>;
         const KIND: &'static str = "@";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "@" {
                 Ok(Self(node))
             } else {
@@ -4195,7 +4263,9 @@ pub mod symbols {
         type WithLifetime<'a> = AtAt<'a>;
         const KIND: &'static str = "@@";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "@@" {
                 Ok(Self(node))
             } else {
@@ -4233,7 +4303,9 @@ pub mod symbols {
         type WithLifetime<'a> = LBracket<'a>;
         const KIND: &'static str = "[";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "[" {
                 Ok(Self(node))
             } else {
@@ -4271,7 +4343,9 @@ pub mod symbols {
         type WithLifetime<'a> = RBracket<'a>;
         const KIND: &'static str = "]";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "]" {
                 Ok(Self(node))
             } else {
@@ -4309,7 +4383,9 @@ pub mod symbols {
         type WithLifetime<'a> = EndSpacecomment<'a>;
         const KIND: &'static str = "end comment";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "end comment" {
                 Ok(Self(node))
             } else {
@@ -4347,7 +4423,9 @@ pub mod symbols {
         type WithLifetime<'a> = EndSpacetest<'a>;
         const KIND: &'static str = "end test";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "end test" {
                 Ok(Self(node))
             } else {
@@ -4385,7 +4463,9 @@ pub mod symbols {
         type WithLifetime<'a> = LBrace<'a>;
         const KIND: &'static str = "{";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "{" {
                 Ok(Self(node))
             } else {
@@ -4423,7 +4503,9 @@ pub mod symbols {
         type WithLifetime<'a> = LBraceLBrace<'a>;
         const KIND: &'static str = "{{";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "{{" {
                 Ok(Self(node))
             } else {
@@ -4461,7 +4543,9 @@ pub mod symbols {
         type WithLifetime<'a> = RBrace<'a>;
         const KIND: &'static str = "}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "}" {
                 Ok(Self(node))
             } else {
@@ -4499,7 +4583,9 @@ pub mod symbols {
         type WithLifetime<'a> = RBraceRBrace<'a>;
         const KIND: &'static str = "}}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "}}" {
                 Ok(Self(node))
             } else {
@@ -4537,7 +4623,9 @@ pub mod symbols {
         type WithLifetime<'a> = BitNot<'a>;
         const KIND: &'static str = "~";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             if node.kind() == "~" {
                 Ok(Self(node))
             } else {
@@ -4655,7 +4743,9 @@ pub mod anon_unions {
             AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective<'a>;
         const KIND : & 'static str = "{account_directive | char_directive | commodity_directive | option | tag_directive | word_directive}" ;
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "account_directive" => Ok(unsafe {
                     Self::AccountDirective(<AccountDirective<'tree> as ::type_sitter::Node<
@@ -4759,7 +4849,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `comment` ([`Comment`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_comment(self) -> ::std::option::Option<Comment<'tree>> {
+        pub fn as_comment_(self) -> ::std::option::Option<Comment<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Comment(x) = self {
                 Some(x)
@@ -4773,7 +4863,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = Account_AccountSubdirective_Comment<'a>;
         const KIND: &'static str = "{account | account_subdirective | comment}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "account" => Ok(unsafe {
                     Self::Account(
@@ -4912,7 +5004,9 @@ pub mod anon_unions {
         const KIND: &'static str =
             "{account | amount | balance_assertion | lot_price | note | price | status}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "account" => Ok(unsafe {
                     Self::Account(
@@ -5069,7 +5163,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = Account_Amount_CheckIn_CheckOut_Commodity_Date<'a>;
         const KIND: &'static str = "{account | amount | check_in | check_out | commodity | date}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "account" => Ok(unsafe {
                     Self::Account(
@@ -5172,7 +5268,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `payee` ([`Payee`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_payee(self) -> ::std::option::Option<Payee<'tree>> {
+        pub fn as_payee_(self) -> ::std::option::Option<Payee<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Payee(x) = self {
                 Some(x)
@@ -5196,7 +5292,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = Account_Date_Payee_Time<'a>;
         const KIND: &'static str = "{account | date | payee | time}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "account" => Ok(unsafe {
                     Self::Account(
@@ -5285,7 +5383,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = Account_Filename<'a>;
         const KIND: &'static str = "{account | filename}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "account" => Ok(unsafe {
                     Self::Account(
@@ -5393,7 +5493,7 @@ pub mod anon_unions {
         }
     }
     #[automatically_derived]
-    impl < 'tree > :: type_sitter :: Node < 'tree > for AliasSubdirective_AssertSubdirective_CheckSubdirective_DefaultSubdirective_NoteSubdirective < 'tree > { type WithLifetime < 'a > = AliasSubdirective_AssertSubdirective_CheckSubdirective_DefaultSubdirective_NoteSubdirective < 'a > ; const KIND : & 'static str = "{alias_subdirective | assert_subdirective | check_subdirective | default_subdirective | note_subdirective}" ; # [inline] fn try_from_raw (node : :: type_sitter :: raw :: Node < 'tree >) -> :: type_sitter :: NodeResult < Self > { match node . kind () { "alias_subdirective" => Ok (unsafe { Self :: AliasSubdirective (< AliasSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "assert_subdirective" => Ok (unsafe { Self :: AssertSubdirective (< AssertSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "check_subdirective" => Ok (unsafe { Self :: CheckSubdirective (< CheckSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "default_subdirective" => Ok (unsafe { Self :: DefaultSubdirective (< DefaultSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "note_subdirective" => Ok (unsafe { Self :: NoteSubdirective (< NoteSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , _ => Err (:: type_sitter :: IncorrectKind :: new :: < Self > (node)) } } # [inline] fn raw (& self) -> & :: type_sitter :: raw :: Node < 'tree > { match self { Self :: AliasSubdirective (x) => :: type_sitter :: Node :: raw (x) , Self :: AssertSubdirective (x) => :: type_sitter :: Node :: raw (x) , Self :: CheckSubdirective (x) => :: type_sitter :: Node :: raw (x) , Self :: DefaultSubdirective (x) => :: type_sitter :: Node :: raw (x) , Self :: NoteSubdirective (x) => :: type_sitter :: Node :: raw (x) , } } # [inline] fn raw_mut (& mut self) -> & mut :: type_sitter :: raw :: Node < 'tree > { match self { Self :: AliasSubdirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: AssertSubdirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: CheckSubdirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: DefaultSubdirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: NoteSubdirective (x) => :: type_sitter :: Node :: raw_mut (x) , } } # [inline] fn into_raw (self) -> :: type_sitter :: raw :: Node < 'tree > { match self { Self :: AliasSubdirective (x) => x . into_raw () , Self :: AssertSubdirective (x) => x . into_raw () , Self :: CheckSubdirective (x) => x . into_raw () , Self :: DefaultSubdirective (x) => x . into_raw () , Self :: NoteSubdirective (x) => x . into_raw () , } } }
+    impl < 'tree > :: type_sitter :: Node < 'tree > for AliasSubdirective_AssertSubdirective_CheckSubdirective_DefaultSubdirective_NoteSubdirective < 'tree > { type WithLifetime < 'a > = AliasSubdirective_AssertSubdirective_CheckSubdirective_DefaultSubdirective_NoteSubdirective < 'a > ; const KIND : & 'static str = "{alias_subdirective | assert_subdirective | check_subdirective | default_subdirective | note_subdirective}" ; # [inline] fn try_from_raw (node : :: type_sitter :: raw :: Node < 'tree >) -> :: type_sitter :: NodeResult < 'tree , Self > { match node . kind () { "alias_subdirective" => Ok (unsafe { Self :: AliasSubdirective (< AliasSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "assert_subdirective" => Ok (unsafe { Self :: AssertSubdirective (< AssertSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "check_subdirective" => Ok (unsafe { Self :: CheckSubdirective (< CheckSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "default_subdirective" => Ok (unsafe { Self :: DefaultSubdirective (< DefaultSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "note_subdirective" => Ok (unsafe { Self :: NoteSubdirective (< NoteSubdirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , _ => Err (:: type_sitter :: IncorrectKind :: new :: < Self > (node)) } } # [inline] fn raw (& self) -> & :: type_sitter :: raw :: Node < 'tree > { match self { Self :: AliasSubdirective (x) => :: type_sitter :: Node :: raw (x) , Self :: AssertSubdirective (x) => :: type_sitter :: Node :: raw (x) , Self :: CheckSubdirective (x) => :: type_sitter :: Node :: raw (x) , Self :: DefaultSubdirective (x) => :: type_sitter :: Node :: raw (x) , Self :: NoteSubdirective (x) => :: type_sitter :: Node :: raw (x) , } } # [inline] fn raw_mut (& mut self) -> & mut :: type_sitter :: raw :: Node < 'tree > { match self { Self :: AliasSubdirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: AssertSubdirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: CheckSubdirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: DefaultSubdirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: NoteSubdirective (x) => :: type_sitter :: Node :: raw_mut (x) , } } # [inline] fn into_raw (self) -> :: type_sitter :: raw :: Node < 'tree > { match self { Self :: AliasSubdirective (x) => x . into_raw () , Self :: AssertSubdirective (x) => x . into_raw () , Self :: CheckSubdirective (x) => x . into_raw () , Self :: DefaultSubdirective (x) => x . into_raw () , Self :: NoteSubdirective (x) => x . into_raw () , } } }
     #[doc = "One of `{alias_subdirective | default_subdirective | format_subdirective | note_subdirective}`:\n- [`AliasSubdirective`]\n- [`DefaultSubdirective`]\n- [`FormatSubdirective`]\n- [`NoteSubdirective`]"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types)]
@@ -5456,7 +5556,9 @@ pub mod anon_unions {
         const KIND: &'static str =
             "{alias_subdirective | default_subdirective | format_subdirective | note_subdirective}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "alias_subdirective" => Ok(unsafe {
                     Self::AliasSubdirective(<AliasSubdirective<'tree> as ::type_sitter::Node<
@@ -5542,7 +5644,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `comment` ([`Comment`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_comment(self) -> ::std::option::Option<Comment<'tree>> {
+        pub fn as_comment_(self) -> ::std::option::Option<Comment<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Comment(x) = self {
                 Some(x)
@@ -5556,7 +5658,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = AssertSubdirective_CheckSubdirective_Comment<'a>;
         const KIND: &'static str = "{assert_subdirective | check_subdirective | comment}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "assert_subdirective" => {
                     Ok(unsafe {
@@ -5648,7 +5752,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = AutomatedXact_PeriodicXact_PlainXact<'a>;
         const KIND: &'static str = "{automated_xact | periodic_xact | plain_xact}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "automated_xact" => {
                     Ok(unsafe {
@@ -5720,7 +5826,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `comment` ([`Comment`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_comment(self) -> ::std::option::Option<Comment<'tree>> {
+        pub fn as_comment_(self) -> ::std::option::Option<Comment<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Comment(x) = self {
                 Some(x)
@@ -5764,7 +5870,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = BlockComment_Comment_Directive_Test_Xact<'a>;
         const KIND: &'static str = "{block_comment | comment | directive | test | xact}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "block_comment" => Ok(unsafe {
                     Self::BlockComment(
@@ -5884,7 +5992,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `payee` ([`Payee`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_payee(self) -> ::std::option::Option<Payee<'tree>> {
+        pub fn as_payee_(self) -> ::std::option::Option<Payee<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Payee(x) = self {
                 Some(x)
@@ -5921,7 +6029,9 @@ pub mod anon_unions {
         const KIND: &'static str =
             "{code | date | effective_date | note | payee | posting | status}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "code" => Ok(unsafe {
                     Self::Code(
@@ -6011,7 +6121,7 @@ pub mod anon_unions {
     impl<'tree> Comment_Commodity_CommoditySubdirective<'tree> {
         #[doc = "Returns the node if it is of type `comment` ([`Comment`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_comment(self) -> ::std::option::Option<Comment<'tree>> {
+        pub fn as_comment_(self) -> ::std::option::Option<Comment<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Comment(x) = self {
                 Some(x)
@@ -6047,7 +6157,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = Comment_Commodity_CommoditySubdirective<'a>;
         const KIND: &'static str = "{comment | commodity | commodity_subdirective}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "comment" => Ok(unsafe {
                     Self::Comment(
@@ -6137,7 +6249,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = Commodity_NegativeQuantity_Quantity<'a>;
         const KIND: &'static str = "{commodity | negative_quantity | quantity}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "commodity" => Ok(unsafe {
                     Self::Commodity(
@@ -6218,7 +6332,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = Date_Time<'a>;
         const KIND: &'static str = "{date | time}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "date" => Ok(unsafe {
                     Self::Date(
@@ -6302,7 +6418,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = Interval_Note_Posting<'a>;
         const KIND: &'static str = "{interval | note | posting}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "interval" => Ok(unsafe {
                     Self::Interval(
@@ -6394,7 +6512,9 @@ pub mod anon_unions {
         type WithLifetime<'a> = Note_Posting_Query<'a>;
         const KIND: &'static str = "{note | posting | query}";
         #[inline]
-        fn try_from_raw(node: ::type_sitter::raw::Node<'tree>) -> ::type_sitter::NodeResult<Self> {
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
             match node.kind() {
                 "note" => Ok(unsafe {
                     Self::Note(

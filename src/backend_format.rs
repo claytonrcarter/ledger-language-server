@@ -9,7 +9,7 @@ use ledger::anon_unions::Commodity_NegativeQuantity_Quantity as AmountFields;
 use ledger::anon_unions::Interval_Note_Posting as PeriodicXactFields;
 use ledger::anon_unions::Note_Posting_Query as AutomatedXactFields;
 use ledger::JournalItem as TS_JournalItem;
-use type_sitter::{Node, Parser, Range, TreeCursor};
+use type_sitter::{HasChild, HasChildren, HasOptionalChild, Node, Parser, Range, TreeCursor};
 
 use std::cmp::Ordering;
 use std::fmt::Display;

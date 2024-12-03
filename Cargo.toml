@@ -31,7 +31,7 @@ tree-sitter = "0.24"
 tree-sitter-ledger = { git = "https://github.com/claytonrcarter/tree-sitter-ledger.git", rev = "2657e59e0e57f451e790df05de6878de957b415b" }
 # actual upstream
 # tree-sitter-ledger = { git = "https://github.com/cbarrete/tree-sitter-ledger.git", rev = "d313153eef68c557ba4538b20de2d0e92f3ef6f8" }
-type-sitter = { version = "0.5.2", default-features = false }
+type-sitter = { version = "0.6", default-features = false }
 walkdir = "2.5.0"
 
 [dev-dependencies]
