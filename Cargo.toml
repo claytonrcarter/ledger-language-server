@@ -4,6 +4,8 @@ version = "0.0.1"
 edition = "2021"
 
 [lints.clippy]
+expect_used = "warn"
+unwrap_used = "warn"
 todo = "warn"
 
 [build-dependencies]

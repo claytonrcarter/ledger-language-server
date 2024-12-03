@@ -1,3 +1,5 @@
+use anyhow::Result;
+use anyhow::{anyhow, bail};
 use ledger::anon_unions::AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective as Directives;
 use ledger::anon_unions::Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status as PostingFields;
 use ledger::anon_unions::AutomatedXact_PeriodicXact_PlainXact as Transactions;
@@ -14,18 +16,20 @@ use std::fmt::Display;
 use std::io::Write;
 
 mod ledger {
-    #![allow(clippy::all)]
+    #![allow(clippy::all, clippy::expect_used, clippy::unwrap_used)]
     include!("./type_sitter/ledger.rs");
 }
 
-pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io::Error> {
+pub fn format(content: &str, sort_transactions: bool) -> Result<String> {
     //
     // parse with tree sitter
     //
     let mut parser = Parser::<ledger::SourceFile>::new(&tree_sitter_ledger::LANGUAGE.into())
-        .expect("loading Ledger tree-sitter grammar");
-    let tree = parser.parse(content, None).unwrap();
-    let root_node = tree.root_node().unwrap();
+        .map_err(|_| anyhow!("loading Ledger tree-sitter grammar"))?;
+    let tree = parser
+        .parse(content, None)
+        .map_err(|_| anyhow!("parsing content"))?;
+    let root_node = tree.root_node().map_err(|err| anyhow!("{err}"))?;
     let mut raw_cursor = root_node.raw().walk();
 
     //
@@ -37,7 +41,12 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io:
         .map(|journal_item| {
             match TS_JournalItem::try_from_raw(journal_item) {
                 Ok(journal_item) => {
-                    let journal_item = journal_item.child().unwrap();
+                    let journal_item = match journal_item.child() {
+                        Ok(journal_item) => journal_item,
+                        Err(_) => {
+                            return JournalItem::Error(substring(content, journal_item.range()))
+                        }
+                    };
 
                     if journal_item.has_error() {
                         // dbg!(substring(content, journal_item.range()));
@@ -50,19 +59,32 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io:
                             range: comment.range(),
                             content: substring(content, comment.range()),
                         }),
-                        JournalItems::Directive(directive) => JournalItem::Directive(
-                            Directive::from_ts_xact(directive, content, || tree.walk()),
-                        ),
-                        JournalItems::Xact(xact) => match xact.child().unwrap() {
-                            Transactions::AutomatedXact(xact) => JournalItem::AutomatedXact(
-                                AutomatedXact::from_ts_xact(xact, content, || tree.walk()),
-                            ),
-                            Transactions::PeriodicXact(xact) => JournalItem::PeriodicXact(
-                                PeriodicXact::from_ts_xact(xact, content, || tree.walk()),
-                            ),
-                            Transactions::PlainXact(xact) => JournalItem::PlainXact(
-                                PlainXact::from_ts_xact(xact, content, || tree.walk()),
-                            ),
+                        JournalItems::Directive(directive) => {
+                            match Directive::from_ts_xact(directive, content, || tree.walk()) {
+                                Ok(directive) => JournalItem::Directive(directive),
+                                Err(_) => JournalItem::Error(substring(content, directive.range())),
+                            }
+                        }
+                        JournalItems::Xact(xact) => match xact.child() {
+                            Ok(Transactions::AutomatedXact(xact)) => {
+                                match AutomatedXact::from_ts_xact(xact, content, || tree.walk()) {
+                                    Ok(xact) => JournalItem::AutomatedXact(xact),
+                                    Err(_) => JournalItem::Error(substring(content, xact.range())),
+                                }
+                            }
+                            Ok(Transactions::PeriodicXact(xact)) => {
+                                match PeriodicXact::from_ts_xact(xact, content, || tree.walk()) {
+                                    Ok(xact) => JournalItem::PeriodicXact(xact),
+                                    Err(_) => JournalItem::Error(substring(content, xact.range())),
+                                }
+                            }
+                            Ok(Transactions::PlainXact(xact)) => {
+                                match PlainXact::from_ts_xact(xact, content, || tree.walk()) {
+                                    Ok(xact) => JournalItem::PlainXact(xact),
+                                    Err(_) => JournalItem::Error(substring(content, xact.range())),
+                                }
+                            }
+                            Err(_) => JournalItem::Error(substring(content, xact.range())),
                         },
                         JournalItems::BlockComment(comment) => {
                             // TODO
@@ -206,7 +228,7 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String, std::io:
         previous_item = Some(journal_item);
     }
 
-    Ok(String::from_utf8(buf).expect("TODO"))
+    Ok(String::from_utf8(buf)?)
 }
 
 fn substring(content: &str, range: Range) -> String {
@@ -331,27 +353,31 @@ impl<'tree> Directive {
         directive: ledger::Directive<'tree>,
         content: &str,
         cursor_fn: T,
-    ) -> Self {
+    ) -> Result<Self> {
         use ledger::anon_unions::Account_AccountSubdirective_Comment as AccountDirectiveNodes;
 
         let mut d;
         let mut cursor = cursor_fn();
-        match directive.child().unwrap() {
+        match directive.child().map_err(|err| anyhow!("{err}"))? {
             Directives::AccountDirective(directive) => {
                 d = Directive::new(directive.range(), substring(content, directive.range()));
 
                 for child in directive.children(&mut cursor) {
-                    match child.unwrap() {
+                    match child.map_err(|err| anyhow!("{err}"))? {
                         AccountDirectiveNodes::Account(account) => {
                             d.content = substring(content, account.range());
                         }
                         AccountDirectiveNodes::AccountSubdirective(subdirective) => {
-                            if let Some(subdirective) = subdirective.child() {
-                                // FIXME consider normalizing/formatting subdirectives depending on thier type?
-                                d.subdirectives.push(Directive::new(
-                                    subdirective.unwrap().range(),
-                                    substring(content, subdirective.unwrap().range()),
-                                ));
+                            match subdirective.child() {
+                                Some(Ok(subdirective)) => {
+                                    // FIXME consider normalizing/formatting subdirectives depending on thier type?
+                                    d.subdirectives.push(Directive::new(
+                                        subdirective.range(),
+                                        substring(content, subdirective.range()),
+                                    ));
+                                }
+                                Some(Err(err)) => bail!("{err}"),
+                                None => {}
                             }
                         }
                         AccountDirectiveNodes::Comment(comment) => {
@@ -359,6 +385,7 @@ impl<'tree> Directive {
                                 d.comments.push(substring(content, comment.range()));
                             } else {
                                 // FIXME can we use in-place manipulation of the last() slice element
+                                #[allow(clippy::unwrap_used)]
                                 let mut subdirective = d.subdirectives.pop().unwrap();
                                 subdirective
                                     .comments
@@ -405,7 +432,7 @@ impl<'tree> Directive {
             }
         }
 
-        d
+        Ok(d)
     }
 }
 
@@ -444,12 +471,12 @@ impl<'tree> PlainXact {
         xact: ledger::PlainXact<'tree>,
         content: &str,
         cursor_fn: T,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut x = PlainXact::new(xact.range());
 
         let mut cursor = cursor_fn();
         for child in xact.children(&mut cursor) {
-            match child.unwrap() {
+            match child.map_err(|err| anyhow!("{err}"))? {
                 XactFields::Date(date) => {
                     let normalized_date = substring(content, date.range()).replace(['.', '-'], "/");
                     x.date = Some(normalized_date);
@@ -465,6 +492,7 @@ impl<'tree> PlainXact {
                         x.payee_note = Some(substring(content, note.range()));
                     } else if !x.postings.is_empty() {
                         // FIXME can we use in-place manipulation of the last() slice element
+                        #[allow(clippy::unwrap_used)]
                         let mut posting = x.postings.pop().unwrap();
                         posting
                             .trailing_notes
@@ -479,7 +507,7 @@ impl<'tree> PlainXact {
                 }
                 XactFields::Posting(posting) => {
                     x.postings
-                        .push(Posting::from_ts_posting(posting, content, &cursor_fn));
+                        .push(Posting::from_ts_posting(posting, content, &cursor_fn)?);
                 }
                 XactFields::Status(status) => {
                     x.status = Some(substring(content, status.range()));
@@ -487,7 +515,7 @@ impl<'tree> PlainXact {
             };
         }
 
-        x
+        Ok(x)
     }
 }
 
@@ -541,12 +569,12 @@ impl<'tree> PeriodicXact {
         xact: ledger::PeriodicXact<'tree>,
         content: &str,
         cursor_fn: T,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut x = PeriodicXact::new(xact.range());
 
         let mut cursor = cursor_fn();
         for child in xact.children(&mut cursor) {
-            match child.unwrap() {
+            match child.map_err(|err| anyhow!("{err}"))? {
                 PeriodicXactFields::Interval(interval) => {
                     x.interval = substring(content, interval.range());
                 }
@@ -559,12 +587,12 @@ impl<'tree> PeriodicXact {
                 }
                 PeriodicXactFields::Posting(posting) => {
                     x.postings
-                        .push(Posting::from_ts_posting(posting, content, &cursor_fn));
+                        .push(Posting::from_ts_posting(posting, content, &cursor_fn)?);
                 }
             }
         }
 
-        x
+        Ok(x)
     }
 }
 
@@ -602,12 +630,12 @@ impl<'tree> AutomatedXact {
         xact: ledger::AutomatedXact<'tree>,
         content: &str,
         cursor_fn: T,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut x = AutomatedXact::new(xact.range());
 
         let mut cursor = cursor_fn();
         for child in xact.children(&mut cursor) {
-            match child.unwrap() {
+            match child.map_err(|err| anyhow!("{err}"))? {
                 AutomatedXactFields::Query(query) => {
                     x.query = substring(content, query.range()).trim().to_string();
                 }
@@ -620,12 +648,12 @@ impl<'tree> AutomatedXact {
                 }
                 AutomatedXactFields::Posting(posting) => {
                     x.postings
-                        .push(Posting::from_ts_posting(posting, content, &cursor_fn));
+                        .push(Posting::from_ts_posting(posting, content, &cursor_fn)?);
                 }
             }
         }
 
-        x
+        Ok(x)
     }
 }
 
@@ -653,34 +681,41 @@ impl<'tree> Posting {
         posting: ledger::Posting<'tree>,
         content: &str,
         cursor_fn: T,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut p = Posting::default();
 
         let mut cursor = cursor_fn();
         for p_child in posting.children(&mut cursor) {
-            match p_child.unwrap() {
+            match p_child.map_err(|err| anyhow!("{err}"))? {
                 PostingFields::Account(account) => {
                     p.account = substring(content, account.range());
                 }
                 PostingFields::Amount(amount) => {
-                    p.amount = Some(Amount::from_ts(amount, content, &cursor_fn));
+                    p.amount = Some(Amount::from_ts(amount, content, &cursor_fn)?);
                 }
                 PostingFields::BalanceAssertion(ba) => {
-                    p.balance_assertion =
-                        Some(Amount::from_ts(ba.amount().unwrap(), content, &cursor_fn));
+                    p.balance_assertion = Some(Amount::from_ts(
+                        ba.amount().map_err(|err| anyhow!("{err}"))?,
+                        content,
+                        &cursor_fn,
+                    )?);
                 }
                 PostingFields::Note(note) => {
                     p.inline_note = Some(substring(content, note.range()));
                 }
                 PostingFields::LotPrice(lot_price) => {
                     p.lot_price = Some(Amount::from_ts(
-                        lot_price.amount().unwrap(),
+                        lot_price.amount().map_err(|err| anyhow!("{err}"))?,
                         content,
                         &cursor_fn,
-                    ))
+                    )?)
                 }
                 PostingFields::Price(price) => {
-                    let amount = Amount::from_ts(price.amount().unwrap(), content, &cursor_fn);
+                    let amount = Amount::from_ts(
+                        price.amount().map_err(|err| anyhow!("{err}"))?,
+                        content,
+                        &cursor_fn,
+                    )?;
 
                     p.price = if substring(content, price.range()).starts_with("@@") {
                         Some(Price::Total(amount))
@@ -693,7 +728,8 @@ impl<'tree> Posting {
                 }
             }
         }
-        p
+
+        Ok(p)
     }
 }
 
@@ -760,29 +796,30 @@ impl<'tree> Amount {
         amount: ledger::Amount<'tree>,
         content: &str,
         cursor_fn: T,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut a = Amount::default();
 
         let mut cursor = cursor_fn();
         for a_child in amount.children(&mut cursor) {
-            match a_child.unwrap() {
-                AmountFields::Commodity(commodity) => {
+            match a_child {
+                Ok(AmountFields::Commodity(commodity)) => {
                     a.commodity = Some(substring(content, commodity.range()));
                     a.commodity_position = match a.quantity {
                         None => CommodityPosition::Left,
                         Some(_) => CommodityPosition::Right,
                     };
                 }
-                AmountFields::NegativeQuantity(quantity) => {
+                Ok(AmountFields::NegativeQuantity(quantity)) => {
                     a.quantity = Some(substring(content, quantity.range()));
                 }
-                AmountFields::Quantity(quantity) => {
+                Ok(AmountFields::Quantity(quantity)) => {
                     a.quantity = Some(substring(content, quantity.range()));
                 }
+                Err(err) => bail!("{err}"),
             }
         }
 
-        a
+        Ok(a)
     }
 }
 

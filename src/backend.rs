@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tower_lsp::lsp_types::Range as LspRange;
@@ -9,11 +9,12 @@ use walkdir::WalkDir;
 
 use crate::{backend_format, contents_of_path};
 
-fn substring(source: &[u8], start_byte: usize, end_byte: usize) -> String {
-    std::str::from_utf8(&source[start_byte..end_byte.min(source.len())])
-        .expect("converting bytes back to text")
-        .trim()
-        .to_string()
+fn substring(source: &[u8], start_byte: usize, end_byte: usize) -> Result<String> {
+    Ok(
+        std::str::from_utf8(&source[start_byte..end_byte.min(source.len())])?
+            .trim()
+            .to_string(),
+    )
 }
 
 fn word_boundary_range(line: &str, index: usize, addl_end_char: Option<char>) -> (usize, usize) {
@@ -86,23 +87,22 @@ impl LedgerBackend {
         }
     }
 
-    fn parser(&self) -> Parser {
+    fn parser(&self) -> Result<Parser> {
         let mut parser = Parser::new();
         let language = Language::new(tree_sitter_ledger::LANGUAGE);
-        parser
-            .set_language(&language)
-            .expect("loading Ledger tree-sitter grammar");
-        parser
+        parser.set_language(&language)?;
+        Ok(parser)
     }
 
     /// Parse an input document (source code) and save the parsed Tree for use
     /// later. If the document has already been cached, no new parsing is done.
     pub fn parse_document(&mut self, content: &str) {
         if !self.trees_cache.contains_key(content) {
-            self.trees_cache.insert(
-                content.to_string(),
-                self.parser().parse(content, None).unwrap(),
-            );
+            if let Ok(mut parser) = self.parser() {
+                if let Some(tree) = parser.parse(content, None) {
+                    self.trees_cache.insert(content.to_string(), tree);
+                }
+            }
         }
     }
 
@@ -127,7 +127,7 @@ impl LedgerBackend {
             content.as_bytes(),
             node.range().start_byte,
             node.range().end_byte,
-        );
+        )?;
         let mut range = node.range();
 
         let line_content = content.lines().nth(position.line as usize).unwrap_or("");
@@ -158,8 +158,10 @@ impl LedgerBackend {
                         .named_child(0)
                         .map_or(false, |child| child.kind() == "filename") =>
             {
-                range = node.named_child(0).unwrap().range();
-                self.completions_insert_project_files(&mut completions, buffer_path)?
+                if let Some(child) = node.named_child(0) {
+                    range = child.range();
+                    self.completions_insert_project_files(&mut completions, buffer_path)?
+                }
             }
 
             "interval" => {
@@ -287,7 +289,7 @@ impl LedgerBackend {
             Some(dir) => dir,
             None => {
                 // TODO ??
-                return Err(anyhow::anyhow!(
+                return Err(anyhow!(
                     "[completions] Buffer has no parent dir? {buffer_path}"
                 ));
             }
@@ -298,17 +300,19 @@ impl LedgerBackend {
             None => {
                 // self.parse_document(content);
                 // self.trees_cache.get(content).unwrap().clone()
-                return Err(anyhow::anyhow!(
+                return Err(anyhow!(
                     "no tree found for contents of file '{buffer_path}'"
                 ));
             }
         };
 
         let ts_query = tree_sitter::Query::new(
-            &self.parser().language().unwrap(),
+            match self.parser()?.language() {
+                Some(ref language) => language,
+                None => bail!("getting tree-sitter language"),
+            },
             format!("{query} (filename) @filename").as_str(),
-        )
-        .expect("creating tree-sitter query");
+        )?;
         let mut cursor = tree_sitter::QueryCursor::new();
 
         let source = content.as_bytes();
@@ -316,7 +320,7 @@ impl LedgerBackend {
         while let Some(m) = matches.next() {
             // query as passed in
             for n in m.nodes_for_capture_index(0) {
-                let capture_text = substring(source, n.start_byte(), n.end_byte());
+                let capture_text = substring(source, n.start_byte(), n.end_byte())?;
                 if let Some(completion) = completion_fn(capture_text) {
                     completions.insert(completion);
                 }
@@ -324,7 +328,7 @@ impl LedgerBackend {
 
             // (filename) @filename
             for n in m.nodes_for_capture_index(1) {
-                let filename = substring(source, n.start_byte(), n.end_byte());
+                let filename = substring(source, n.start_byte(), n.end_byte())?;
 
                 let path = Path::new(&filename);
                 let path = if path.is_absolute() {
@@ -374,7 +378,7 @@ impl LedgerBackend {
             Some(dir) => dir,
             None => {
                 // TODO ??
-                return Err(anyhow::anyhow!(
+                return Err(anyhow!(
                     "[completions] Buffer has no parent dir? {buffer_path}"
                 ));
             }
@@ -492,7 +496,7 @@ impl LedgerBackend {
                     None | Some((_, _)) => return None,
                 };
 
-                let path_start_offset = line.find(path).unwrap() as u32;
+                let path_start_offset = line.find(path).unwrap_or(0) as u32;
                 let path_len = path.len() as u32;
 
                 Some((
