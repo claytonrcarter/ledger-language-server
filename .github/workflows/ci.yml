@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   pull_request:
     branches:
       - '**'
@@ -13,7 +15,24 @@ env:
   RUST_BACKTRACE: short
 
 jobs:
-  run-tests:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - run: rustup update
+      - run: rustup default stable
+      - run: rustup component add clippy
+      - run: rustup component add rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Check clippy
+        run: cargo clippy -- --deny warnings
+
+  tests:
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest]
