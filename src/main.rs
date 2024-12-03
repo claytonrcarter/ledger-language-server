@@ -20,17 +20,22 @@ async fn main() {
         env::args().nth(4),
     ) {
         (Some(arg), Some(file), Some(line), Some(column)) if arg == "--debug" => {
-            let file = Path::new(&file).canonicalize().unwrap();
-            let file = file.as_os_str().to_str().unwrap();
-            let source = contents_of_path(file).unwrap();
+            #[allow(clippy::unwrap_used)]
+            let (file, source) = {
+                let file = Path::new(&file).canonicalize().unwrap();
+                let file = file.as_os_str().to_str().unwrap().to_string();
+                let source = contents_of_path(&file).unwrap();
+                (file, source)
+            };
 
             let mut be = LedgerBackend::new();
             be.parse_document(&source);
 
             let mut visited = HashSet::new();
+            #[allow(clippy::unwrap_used)]
             let completions = be
                 .completions_for_position(
-                    file,
+                    &file,
                     &source,
                     &tower_lsp::lsp_types::Position {
                         line: line.parse().unwrap(),

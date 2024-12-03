@@ -415,7 +415,7 @@ impl LanguageServer for Lsp {
             None | Some((_, _)) => return Ok(None),
         };
 
-        let path_start_offset = line.find(path).unwrap() as u32;
+        let path_start_offset = line.find(path).unwrap_or(0) as u32;
         let path_len = path.len() as u32;
         let origin_selection_range = Some(Range {
             start: Position {
