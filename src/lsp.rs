@@ -68,11 +68,36 @@ macro_rules! log {
     });
 }
 
+macro_rules! log_debug {
+    // log!(self, LEVEL, "format {args} and {}", such)
+    // where level is LOG, INFO, WARNING, ERROR
+    ($self:ident, $lvl:ident, $($arg:tt)+) => ({
+        #[cfg(debug_assertions)]
+        $self.client
+            .log_message(MessageType::$lvl, format!($($arg)+))
+            .await;
+    });
+
+    // log!(self, "format {args} and {}", such)
+    ($self:ident, $($arg:tt)+) => ({
+        #[cfg(debug_assertions)]
+        $self.client
+            .log_message(MessageType::LOG, format!($($arg)+))
+            .await;
+    });
+}
+
 #[tower_lsp::async_trait]
 impl LanguageServer for Lsp {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
-        log!(self, "[initialize] {params:#?}");
         log!(
+            self,
+            "[initialize] initializing {} {}",
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION")
+        );
+        log_debug!(self, "[initialize] {params:#?}");
+        log_debug!(
             self,
             "[initialize:initialization_options] {:#?}",
             params.initialization_options
@@ -100,7 +125,7 @@ impl LanguageServer for Lsp {
                 None => {}
             }
         }
-        log!(self, "[initialize:config] {:#?}", state.config);
+        log_debug!(self, "[initialize:config] {:#?}", state.config);
 
         Ok(InitializeResult {
             server_info: None,
@@ -136,29 +161,29 @@ impl LanguageServer for Lsp {
         })
     }
 
-    async fn initialized(&self, params: InitializedParams) {
-        log!(self, "[initialized] {params:?}");
+    async fn initialized(&self, _params: InitializedParams) {
+        log_debug!(self, "[initialized] {_params:?}");
     }
 
     async fn shutdown(&self) -> Result<()> {
-        log!(self, "[shutdown]");
+        log_debug!(self, "[shutdown]");
         Ok(())
     }
 
-    async fn did_change_workspace_folders(&self, params: DidChangeWorkspaceFoldersParams) {
-        log!(self, "[did_change_workspace_folders] {params:?}");
+    async fn did_change_workspace_folders(&self, _params: DidChangeWorkspaceFoldersParams) {
+        log_debug!(self, "[did_change_workspace_folders] {_params:?}");
     }
 
-    async fn did_change_configuration(&self, params: DidChangeConfigurationParams) {
-        log!(self, "[did_change_configuration] {params:?}");
+    async fn did_change_configuration(&self, _params: DidChangeConfigurationParams) {
+        log_debug!(self, "[did_change_configuration] {_params:?}");
     }
 
-    async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) {
-        log!(self, "[did_change_watched_files] {params:?}");
+    async fn did_change_watched_files(&self, _params: DidChangeWatchedFilesParams) {
+        log_debug!(self, "[did_change_watched_files] {_params:?}");
     }
 
-    async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<Value>> {
-        log!(self, "[execute_command] {params:?}");
+    async fn execute_command(&self, _params: ExecuteCommandParams) -> Result<Option<Value>> {
+        log_debug!(self, "[execute_command] {_params:?}");
 
         match self.client.apply_edit(WorkspaceEdit::default()).await {
             Ok(res) if res.applied => self.client.log_message(MessageType::INFO, "applied").await,
@@ -173,7 +198,7 @@ impl LanguageServer for Lsp {
         {
             let mut p = params.clone();
             p.text_document.text = "...trimmed...".to_string();
-            log!(self, "[did_open] {p:?}");
+            log_debug!(self, "[did_open] {p:?}");
         }
 
         // on open, cache the file contents, generate initial completions, and
@@ -208,7 +233,7 @@ impl LanguageServer for Lsp {
                     c
                 })
                 .collect();
-            log!(self, "[did_change] {p:?}");
+            log_debug!(self, "[did_change] {p:?}");
         }
 
         // on update, only cache the file contents and don't touch the
@@ -229,7 +254,7 @@ impl LanguageServer for Lsp {
         {
             let mut p = params.clone();
             p.text = Some("...trimmed...".to_string());
-            log!(self, "[did_save] {p:?}");
+            log_debug!(self, "[did_save] {p:?}");
         }
 
         // on save, regenerate the completions and diagnostics, but don't cache
@@ -248,17 +273,17 @@ impl LanguageServer for Lsp {
         }
     }
 
-    async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        log!(self, "[did_close] {params:?}");
+    async fn did_close(&self, _params: DidCloseTextDocumentParams) {
+        log_debug!(self, "[did_close] {_params:?}");
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        log!(self, "[completion] {params:?}");
+        log_debug!(self, "[completion] {params:?}");
         let start_time = std::time::Instant::now();
 
         // let contents = contents_of_path(params.text_document_position.text_document.uri.path());
         let mut state = self.state.lock().await;
-        log!(
+        log_debug!(
             self,
             "[completion] acquired lock @ {:?}",
             start_time.elapsed()
@@ -278,7 +303,7 @@ impl LanguageServer for Lsp {
         ) {
             Ok(CompletionResult::Some { range, completions }) => (range, completions),
             Ok(CompletionResult::None) => {
-                log!(
+                log_debug!(
                     self,
                     INFO,
                     "[completion] no completions for position {:?}",
@@ -286,8 +311,8 @@ impl LanguageServer for Lsp {
                 );
                 return Ok(None);
             }
-            Ok(CompletionResult::NoNode(report)) => {
-                log!(self, INFO, "[completion] {report}");
+            Ok(CompletionResult::NoNode(_report)) => {
+                log_debug!(self, INFO, "[completion] {_report}");
                 return Ok(None);
             }
             Err(err) => {
@@ -346,8 +371,8 @@ impl LanguageServer for Lsp {
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
-        log!(self, "[formatting] {params:?}");
-        let start_time = std::time::Instant::now();
+        log_debug!(self, "[formatting] {params:?}");
+        let _start_time = std::time::Instant::now();
 
         let state = self.state.lock().await;
         if !state.config.format {
@@ -373,10 +398,10 @@ impl LanguageServer for Lsp {
             }
         };
 
-        log!(
+        log_debug!(
             self,
             "[formatting:response] done in {:?}",
-            start_time.elapsed()
+            _start_time.elapsed()
         );
         Ok(Some(vec![TextEdit {
             range: Range {
@@ -391,7 +416,7 @@ impl LanguageServer for Lsp {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
-        log!(self, "[goto_definition] {params:?}");
+        log_debug!(self, "[goto_definition] {params:?}");
 
         let state = self.state.lock().await;
         let buffer_path = params
