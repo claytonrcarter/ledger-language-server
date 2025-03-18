@@ -61,7 +61,7 @@ For example, in Zed, these could be set in your `settings.json`, like so:
   ...
 
   "lsp": {
-    "ledger-lsp": {
+    "ledger-language-server": {
       "initialization_options": {
         "formatting": true,
         "sort_transactions": false
