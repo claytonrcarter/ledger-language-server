@@ -131,7 +131,6 @@ impl LedgerBackend {
 
     pub fn transaction_at_position_status(
         &mut self,
-        _buffer_path: &str,
         content: &str,
         position: &Position,
     ) -> Result<Option<TransactionStatus>> {
@@ -1423,14 +1422,16 @@ mod test {
                 Account
             ",
         );
+        let mut backend = LedgerBackend::new();
+        backend._test_project_files = Some(vec![]);
+        backend.parse_document(&source);
 
-        let status = get_transaction_status(
+        let status = backend.transaction_at_position_status(
             &source,
             &Position {
                 line: 1,
                 character: 1,
             },
-            None,
         )?;
 
         insta::assert_debug_snapshot!(status,
@@ -1446,13 +1447,12 @@ mod test {
         "#
         );
 
-        let status = get_transaction_status(
+        let status = backend.transaction_at_position_status(
             &source,
             &Position {
                 line: 4,
                 character: 1,
             },
-            None,
         )?;
 
         insta::assert_debug_snapshot!(status,
@@ -1474,13 +1474,12 @@ mod test {
         "#
         );
 
-        let status = get_transaction_status(
+        let status = backend.transaction_at_position_status(
             &source,
             &Position {
                 line: 7,
                 character: 1,
             },
-            None,
         )?;
 
         insta::assert_debug_snapshot!(status,
@@ -1763,21 +1762,6 @@ mod test {
             }
             _ => panic!(),
         }
-    }
-
-    fn get_transaction_status(
-        source: &str,
-        position: &Position,
-        backend: Option<LedgerBackend>,
-    ) -> Result<Option<TransactionStatus>> {
-        let mut backend = backend.unwrap_or_else(|| {
-            let mut be = LedgerBackend::new();
-            be._test_project_files = Some(vec![]);
-            be.parse_document(&source);
-            be
-        });
-
-        backend.transaction_at_position_status("unused in test", &source, &position)
     }
 
     fn get_node_info(
