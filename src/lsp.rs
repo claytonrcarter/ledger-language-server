@@ -389,7 +389,7 @@ impl LanguageServer for Lsp {
                 changes.insert(params.text_document.uri.clone(), pending_edits);
 
                 actions.push(CodeActionOrCommand::CodeAction(CodeAction {
-                    title: format!("Mark all pending transactions cleared"),
+                    title: "Mark all pending transactions cleared".to_string(),
                     kind: None,
                     diagnostics: None,
                     edit: Some(WorkspaceEdit {

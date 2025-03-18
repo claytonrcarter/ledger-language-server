@@ -184,21 +184,19 @@ impl LedgerBackend {
                 "*" => Ok(Some(TransactionStatus::Cleared(range))),
                 _ => Err(anyhow!("TODO")),
             }
+        } else if let Some(node) = date_node {
+            // add status at end of date node
+            Ok(Some(TransactionStatus::NotCleared(
+                lsp_range_from_ts_range(node.range()).end,
+            )))
+        } else if let Some(node) = code_or_payee_node {
+            // add status before code or payee, preserving an existing whitespace
+            let mut range = lsp_range_from_ts_range(node.range());
+            range.start.character = range.start.character.saturating_sub(1);
+            range.end = range.start;
+            Ok(Some(TransactionStatus::NotCleared(range.start)))
         } else {
-            if let Some(node) = date_node {
-                // add status at end of date node
-                Ok(Some(TransactionStatus::NotCleared(
-                    lsp_range_from_ts_range(node.range()).end,
-                )))
-            } else if let Some(node) = code_or_payee_node {
-                // add status before code or payee, preserving an existing whitespace
-                let mut range = lsp_range_from_ts_range(node.range());
-                range.start.character = range.start.character.saturating_sub(1);
-                range.end = range.start;
-                Ok(Some(TransactionStatus::NotCleared(range.start)))
-            } else {
-                Err(anyhow!("TODO"))
-            }
+            Err(anyhow!("TODO"))
         }
     }
 
