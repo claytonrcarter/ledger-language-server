@@ -202,6 +202,39 @@ impl LedgerBackend {
         }
     }
 
+    pub fn pending_transaction_status_ranges(&mut self, content: &str) -> Result<Vec<LspRange>> {
+        let tree = match self.trees_cache.get(content) {
+            Some(tree) => tree.clone(),
+            None => {
+                return Err(anyhow!("no tree found for given contents"));
+            }
+        };
+
+        let ts_query = tree_sitter::Query::new(
+            match self.parser()?.language() {
+                Some(ref language) => language,
+                None => bail!("getting tree-sitter language"),
+            },
+            "(status) @status",
+        )?;
+        let mut cursor = tree_sitter::QueryCursor::new();
+
+        let source = content.as_bytes();
+        let mut matches = cursor.matches(&ts_query, tree.root_node(), source);
+        let mut ranges = Vec::new();
+        while let Some(m) = matches.next() {
+            for status_node in m.nodes_for_capture_index(0) {
+                let capture_text =
+                    substring(source, status_node.start_byte(), status_node.end_byte())?;
+                if capture_text == "!" {
+                    ranges.push(lsp_range_from_ts_range(status_node.range()));
+                }
+            }
+        }
+
+        Ok(ranges)
+    }
+
     pub fn completions_for_position(
         &mut self,
         buffer_path: &str,
@@ -1498,6 +1531,60 @@ mod test {
                 },
             ),
         )
+        "#
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pending_transaction_status_ranges() -> Result<()> {
+        let source = textwrap::dedent(
+            "
+            24/01/02 ! Payee1
+                Account
+
+            24/02/03 Payee2
+                Account
+
+            24/02/03 ! Mom & Dad
+                Account
+
+            24/02/03 Payee1
+                Account
+            ",
+        );
+
+        let mut backend = LedgerBackend::new();
+        backend._test_project_files = Some(vec![]);
+        backend.parse_document(&source);
+
+        let ranges = backend.pending_transaction_status_ranges(&source)?;
+
+        insta::assert_debug_snapshot!(ranges,
+        @r#"
+        [
+            Range {
+                start: Position {
+                    line: 1,
+                    character: 9,
+                },
+                end: Position {
+                    line: 1,
+                    character: 10,
+                },
+            },
+            Range {
+                start: Position {
+                    line: 7,
+                    character: 9,
+                },
+                end: Position {
+                    line: 7,
+                    character: 10,
+                },
+            },
+        ]
         "#
         );
 

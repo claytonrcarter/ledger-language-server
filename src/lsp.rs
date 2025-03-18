@@ -295,84 +295,123 @@ impl LanguageServer for Lsp {
             None => return Ok(None),
         };
 
-        let status = match state.backend.transaction_at_position_status(
-            pathname,
-            &contents,
-            &params.range.start,
-        ) {
-            Ok(Some(status)) => status,
-            Ok(None) => return Ok(None),
+        let mut actions = Vec::new();
+
+        match state
+            .backend
+            .transaction_at_position_status(&contents, &params.range.start)
+        {
+            Ok(Some(status)) => {
+                let make_pending_edit = |range| {
+                    (
+                        "pending (!)",
+                        TextEdit {
+                            range,
+                            new_text: " !".to_string(),
+                        },
+                    )
+                };
+                let make_cleared_edit = |range| {
+                    (
+                        "cleared (*)",
+                        TextEdit {
+                            range,
+                            new_text: " *".to_string(),
+                        },
+                    )
+                };
+                let make_not_cleared_edit = |range| {
+                    (
+                        "not cleared",
+                        TextEdit {
+                            range,
+                            new_text: "".to_string(),
+                        },
+                    )
+                };
+                let make_code_action = |(label, edit)| {
+                    let mut changes = HashMap::new();
+                    changes.insert(params.text_document.uri.clone(), vec![edit]);
+
+                    CodeActionOrCommand::CodeAction(CodeAction {
+                        title: format!("Mark transaction as {label}"),
+                        kind: None,
+                        diagnostics: None,
+                        edit: Some(WorkspaceEdit {
+                            changes: Some(changes),
+                            document_changes: None,
+                            change_annotations: None,
+                        }),
+                        command: None,
+                        is_preferred: Some(false),
+                        disabled: None,
+                        data: None,
+                    })
+                };
+
+                match status {
+                    TransactionStatus::NotCleared(pos) => {
+                        let range = Range {
+                            start: pos,
+                            end: pos,
+                        };
+
+                        actions.push(make_code_action(make_pending_edit(range)));
+                        actions.push(make_code_action(make_cleared_edit(range)));
+                    }
+                    TransactionStatus::Pending(range) => {
+                        actions.push(make_code_action(make_cleared_edit(range)));
+                        actions.push(make_code_action(make_not_cleared_edit(range)));
+                    }
+                    TransactionStatus::Cleared(range) => {
+                        actions.push(make_code_action(make_pending_edit(range)));
+                        actions.push(make_code_action(make_not_cleared_edit(range)));
+                    }
+                };
+            }
+            Ok(None) => {}
             Err(err) => {
                 log!(self, ERROR, "[code_action] {err}");
                 return Ok(None);
             }
         };
 
-        let make_pending_edit = |range| {
-            (
-                "pending (!)",
-                TextEdit {
-                    range,
-                    new_text: " !".to_string(),
-                },
-            )
-        };
-        let make_cleared_edit = |range| {
-            (
-                "cleared (*)",
-                TextEdit {
-                    range,
-                    new_text: " *".to_string(),
-                },
-            )
-        };
-        let make_not_cleared_edit = |range| {
-            (
-                "not cleared",
-                TextEdit {
-                    range,
-                    new_text: "".to_string(),
-                },
-            )
-        };
-        let make_code_action = |(label, edit)| {
-            let mut changes = HashMap::new();
-            changes.insert(params.text_document.uri.clone(), vec![edit]);
+        match state.backend.pending_transaction_status_ranges(&contents) {
+            Ok(pending_ranges) if !pending_ranges.is_empty() => {
+                let pending_edits = pending_ranges
+                    .into_iter()
+                    .map(|range| TextEdit {
+                        range,
+                        new_text: "*".to_string(),
+                    })
+                    .collect();
+                let mut changes = HashMap::new();
+                changes.insert(params.text_document.uri.clone(), pending_edits);
 
-            CodeActionOrCommand::CodeAction(CodeAction {
-                title: format!("Mark transaction as {label}"),
-                kind: None,
-                diagnostics: None,
-                edit: Some(WorkspaceEdit {
-                    changes: Some(changes),
-                    document_changes: None,
-                    change_annotations: None,
-                }),
-                command: None,
-                is_preferred: Some(false),
-                disabled: None,
-                data: None,
-            })
-        };
-
-        let edits = match status {
-            TransactionStatus::NotCleared(pos) => {
-                let range = Range {
-                    start: pos,
-                    end: pos,
-                };
-                vec![make_pending_edit(range), make_cleared_edit(range)]
+                actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                    title: format!("Mark all pending transactions cleared"),
+                    kind: None,
+                    diagnostics: None,
+                    edit: Some(WorkspaceEdit {
+                        changes: Some(changes),
+                        document_changes: None,
+                        change_annotations: None,
+                    }),
+                    command: None,
+                    is_preferred: Some(false),
+                    disabled: None,
+                    data: None,
+                }))
             }
-            TransactionStatus::Pending(range) => {
-                vec![make_cleared_edit(range), make_not_cleared_edit(range)]
-            }
-            TransactionStatus::Cleared(range) => {
-                vec![make_pending_edit(range), make_not_cleared_edit(range)]
+            Ok(_) => {}
+            Err(err) => {
+                log!(self, ERROR, "[code_action] {err}");
+                return Ok(None);
             }
         };
 
         log!(self, "[code_action:response] @ {:?}", start_time.elapsed());
-        Ok(Some(edits.into_iter().map(make_code_action).collect()))
+        Ok(Some(actions))
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
