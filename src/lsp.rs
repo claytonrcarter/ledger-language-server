@@ -1,4 +1,4 @@
-use crate::backend::{CompletionResult, LedgerBackend, LedgerCompletion};
+use crate::backend::{CompletionResult, LedgerBackend, LedgerCompletion, TransactionStatus};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -130,6 +130,7 @@ impl LanguageServer for Lsp {
         Ok(InitializeResult {
             server_info: None,
             capabilities: ServerCapabilities {
+                code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
                     // trigger_characters: None,
@@ -276,6 +277,102 @@ impl LanguageServer for Lsp {
 
     async fn did_close(&self, _params: DidCloseTextDocumentParams) {
         log_debug!(self, "[did_close] {_params:?}");
+    }
+
+    async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
+        log_debug!(self, "[code_action] {params:?}");
+        let start_time = std::time::Instant::now();
+
+        let mut state = self.state.lock().await;
+        log_debug!(
+            self,
+            "[code_action] acquired lock @ {:?}",
+            start_time.elapsed()
+        );
+        let pathname = params.text_document.uri.path();
+        let contents = match state.sources.get(pathname) {
+            Some(contents) => contents.clone(),
+            None => return Ok(None),
+        };
+
+        let status = match state.backend.transaction_at_position_status(
+            pathname,
+            &contents,
+            &params.range.start,
+        ) {
+            Ok(Some(status)) => status,
+            Ok(None) => return Ok(None),
+            Err(err) => {
+                log!(self, ERROR, "[code_action] {err}");
+                return Ok(None);
+            }
+        };
+
+        let make_pending_edit = |range| {
+            (
+                "pending (!)",
+                TextEdit {
+                    range,
+                    new_text: " !".to_string(),
+                },
+            )
+        };
+        let make_cleared_edit = |range| {
+            (
+                "cleared (*)",
+                TextEdit {
+                    range,
+                    new_text: " *".to_string(),
+                },
+            )
+        };
+        let make_not_cleared_edit = |range| {
+            (
+                "not cleared",
+                TextEdit {
+                    range,
+                    new_text: "".to_string(),
+                },
+            )
+        };
+        let make_code_action = |(label, edit)| {
+            let mut changes = HashMap::new();
+            changes.insert(params.text_document.uri.clone(), vec![edit]);
+
+            CodeActionOrCommand::CodeAction(CodeAction {
+                title: format!("Mark transaction as {label}"),
+                kind: None,
+                diagnostics: None,
+                edit: Some(WorkspaceEdit {
+                    changes: Some(changes),
+                    document_changes: None,
+                    change_annotations: None,
+                }),
+                command: None,
+                is_preferred: Some(false),
+                disabled: None,
+                data: None,
+            })
+        };
+
+        let edits = match status {
+            TransactionStatus::NotCleared(pos) => {
+                let range = Range {
+                    start: pos,
+                    end: pos,
+                };
+                vec![make_pending_edit(range), make_cleared_edit(range)]
+            }
+            TransactionStatus::Pending(range) => {
+                vec![make_cleared_edit(range), make_not_cleared_edit(range)]
+            }
+            TransactionStatus::Cleared(range) => {
+                vec![make_pending_edit(range), make_not_cleared_edit(range)]
+            }
+        };
+
+        log!(self, "[code_action:response] @ {:?}", start_time.elapsed());
+        Ok(Some(edits.into_iter().map(make_code_action).collect()))
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {

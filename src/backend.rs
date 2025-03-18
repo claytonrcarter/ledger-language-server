@@ -43,6 +43,19 @@ fn word_boundary_range(line: &str, index: usize, addl_end_char: Option<char>) ->
     }
 }
 
+fn lsp_range_from_ts_range(range: tree_sitter::Range) -> LspRange {
+    LspRange {
+        start: Position {
+            line: range.start_point.row as u32,
+            character: range.start_point.column as u32,
+        },
+        end: Position {
+            line: range.end_point.row as u32,
+            character: range.end_point.column as u32,
+        },
+    }
+}
+
 #[derive(Debug)]
 pub enum CompletionResult {
     Some {
@@ -68,6 +81,16 @@ pub enum LedgerCompletion {
 pub struct Snippet {
     pub label: String,
     pub snippet: String,
+}
+
+#[derive(Debug)]
+pub enum TransactionStatus {
+    // Position is where the status would go: at the end of the date node.
+    NotCleared(Position),
+
+    // Range is where the current status is, including trailing whitespace, before code or payee.
+    Pending(LspRange),
+    Cleared(LspRange),
 }
 
 pub struct LedgerBackend {
@@ -102,6 +125,80 @@ impl LedgerBackend {
                 if let Some(tree) = parser.parse(content, None) {
                     self.trees_cache.insert(content.to_string(), tree);
                 }
+            }
+        }
+    }
+
+    pub fn transaction_at_position_status(
+        &mut self,
+        _buffer_path: &str,
+        content: &str,
+        position: &Position,
+    ) -> Result<Option<TransactionStatus>> {
+        let mut node = match self.node_at_position(content, position) {
+            Some(node) => node,
+            None => {
+                return Ok(None);
+            }
+        };
+
+        while node.kind() != "plain_xact" {
+            if let Some(parent) = node.parent() {
+                node = parent
+            } else {
+                // dbg!(position, node.kind(), node.range());
+                return Ok(None);
+            }
+        }
+        // dbg!(position, node.kind(), node.range());
+
+        let mut date_node = None;
+        let mut status_node = None;
+        let mut code_or_payee_node = None;
+
+        let mut cursor = node.walk();
+        for node in node.named_children(&mut cursor) {
+            if node.kind() == "date" {
+                date_node = Some(node);
+            } else if node.kind() == "status" {
+                status_node = Some(node);
+            } else if node.kind() == "code" || node.kind() == "payee" {
+                code_or_payee_node = Some(node);
+                break;
+            }
+        }
+
+        if let Some(node) = status_node {
+            let status = substring(
+                content.as_bytes(),
+                node.range().start_byte,
+                node.range().end_byte,
+            )?;
+
+            // node range is only the status character, our replacement range
+            // should include the leading whitespace
+            let mut range = lsp_range_from_ts_range(node.range());
+            range.start.character = range.start.character.saturating_sub(1);
+
+            match status.trim() {
+                "!" => Ok(Some(TransactionStatus::Pending(range))),
+                "*" => Ok(Some(TransactionStatus::Cleared(range))),
+                _ => Err(anyhow!("TODO")),
+            }
+        } else {
+            if let Some(node) = date_node {
+                // add status at end of date node
+                Ok(Some(TransactionStatus::NotCleared(
+                    lsp_range_from_ts_range(node.range()).end,
+                )))
+            } else if let Some(node) = code_or_payee_node {
+                // add status before code or payee, preserving an existing whitespace
+                let mut range = lsp_range_from_ts_range(node.range());
+                range.start.character = range.start.character.saturating_sub(1);
+                range.end = range.start;
+                Ok(Some(TransactionStatus::NotCleared(range.start)))
+            } else {
+                Err(anyhow!("TODO"))
             }
         }
     }
@@ -1313,6 +1410,102 @@ mod test {
     }
 
     #[test]
+    fn test_transaction_status() -> Result<()> {
+        let source = textwrap::dedent(
+            "
+            24/01/02 Payee1
+                Account
+
+            24/02/03 ! Payee2
+                Account
+
+            24/02/03 * Mom & Dad
+                Account
+            ",
+        );
+
+        let status = get_transaction_status(
+            &source,
+            &Position {
+                line: 1,
+                character: 1,
+            },
+            None,
+        )?;
+
+        insta::assert_debug_snapshot!(status,
+        @r#"
+        Some(
+            NotCleared(
+                Position {
+                    line: 1,
+                    character: 8,
+                },
+            ),
+        )
+        "#
+        );
+
+        let status = get_transaction_status(
+            &source,
+            &Position {
+                line: 4,
+                character: 1,
+            },
+            None,
+        )?;
+
+        insta::assert_debug_snapshot!(status,
+        @r#"
+        Some(
+            Pending(
+                Range {
+                    start: Position {
+                        line: 4,
+                        character: 8,
+                    },
+                    end: Position {
+                        line: 4,
+                        character: 10,
+                    },
+                },
+            ),
+        )
+        "#
+        );
+
+        let status = get_transaction_status(
+            &source,
+            &Position {
+                line: 7,
+                character: 1,
+            },
+            None,
+        )?;
+
+        insta::assert_debug_snapshot!(status,
+        @r#"
+        Some(
+            Cleared(
+                Range {
+                    start: Position {
+                        line: 7,
+                        character: 8,
+                    },
+                    end: Position {
+                        line: 7,
+                        character: 10,
+                    },
+                },
+            ),
+        )
+        "#
+        );
+
+        Ok(())
+    }
+
+    #[test]
     fn test_node_xact_ranges() {
         let source = textwrap::dedent(
             "
@@ -1570,6 +1763,21 @@ mod test {
             }
             _ => panic!(),
         }
+    }
+
+    fn get_transaction_status(
+        source: &str,
+        position: &Position,
+        backend: Option<LedgerBackend>,
+    ) -> Result<Option<TransactionStatus>> {
+        let mut backend = backend.unwrap_or_else(|| {
+            let mut be = LedgerBackend::new();
+            be._test_project_files = Some(vec![]);
+            be.parse_document(&source);
+            be
+        });
+
+        backend.transaction_at_position_status("unused in test", &source, &position)
     }
 
     fn get_node_info(
