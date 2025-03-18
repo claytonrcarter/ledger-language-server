@@ -130,9 +130,6 @@ impl LanguageServer for Lsp {
         Ok(InitializeResult {
             server_info: None,
             capabilities: ServerCapabilities {
-                text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                    TextDocumentSyncKind::FULL,
-                )),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
                     // trigger_characters: None,
@@ -141,11 +138,17 @@ impl LanguageServer for Lsp {
                     all_commit_characters: None,
                     completion_item: None,
                 }),
+                document_formatting_provider: Some(OneOf::Left(true))
+                    .filter(|_| state.config.format),
+                definition_provider: Some(OneOf::Left(true)),
                 execute_command_provider: None,
                 // execute_command_provider: Some(ExecuteCommandOptions {
                 //     commands: vec!["dummy.do_something".to_string()],
                 //     work_done_progress_options: Default::default(),
                 // }),
+                text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                    TextDocumentSyncKind::FULL,
+                )),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                         supported: Some(true),
@@ -153,9 +156,7 @@ impl LanguageServer for Lsp {
                     }),
                     file_operations: None,
                 }),
-                document_formatting_provider: Some(OneOf::Left(true))
-                    .filter(|_| state.config.format),
-                definition_provider: Some(OneOf::Left(true)),
+
                 ..ServerCapabilities::default()
             },
         })
