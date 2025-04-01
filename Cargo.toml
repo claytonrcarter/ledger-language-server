@@ -36,4 +36,6 @@ walkdir = "2.5.0"
 
 [dev-dependencies]
 insta = "1.39.0"
+test-log = { version = "0.2", default-features = false, features = ["trace"] }
 textwrap = "0.16.1"
+tracing = "0.1"
