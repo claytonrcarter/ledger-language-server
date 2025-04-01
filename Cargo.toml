@@ -28,7 +28,7 @@ tree-sitter = "0.24"
 # for local dev
 # tree-sitter-ledger = { path = "../tree-sitter/tree-sitter-ledger" }
 # temp: forked upstream
-tree-sitter-ledger = { git = "https://github.com/claytonrcarter/tree-sitter-ledger.git", rev = "2657e59e0e57f451e790df05de6878de957b415b" }
+tree-sitter-ledger = { git = "https://github.com/claytonrcarter/tree-sitter-ledger.git", rev = "eaaf3f92dc018ea84b382625059292e361a3ef88" }
 # actual upstream
 # tree-sitter-ledger = { git = "https://github.com/cbarrete/tree-sitter-ledger.git", rev = "d313153eef68c557ba4538b20de2d0e92f3ef6f8" }
 type-sitter = { version = "0.6", default-features = false }

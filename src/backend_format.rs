@@ -329,6 +329,7 @@ enum Price {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct Amount {
+    negative: bool,
     commodity_position: CommodityPosition,
     commodity: Option<String>,
     quantity: Option<String>,
@@ -805,6 +806,7 @@ impl<'tree> Amount {
                 }
                 Ok(AmountFields::NegativeQuantity(quantity)) => {
                     a.quantity = Some(substring(content, quantity.range()));
+                    a.negative = true;
                 }
                 Ok(AmountFields::Quantity(quantity)) => {
                     a.quantity = Some(substring(content, quantity.range()));
@@ -819,12 +821,14 @@ impl<'tree> Amount {
 
 impl Display for Amount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let negative = if self.negative { "-" } else { "" };
+
         match (&self.commodity, &self.quantity) {
             (Some(commodity), Some(quantity)) => match self.commodity_position {
-                CommodityPosition::Left => write!(f, "{commodity}{quantity}")?,
-                CommodityPosition::Right => write!(f, "{quantity}{commodity}")?,
+                CommodityPosition::Left => write!(f, "{commodity}{negative}{quantity}")?,
+                CommodityPosition::Right => write!(f, "{negative}{quantity}{commodity}")?,
             },
-            (None, Some(quantity)) => write!(f, "{quantity}")?,
+            (None, Some(quantity)) => write!(f, "{negative}{quantity}")?,
             (Some(_), None) | (None, None) => {}
         };
 
@@ -889,6 +893,28 @@ fn format_transaction() {
             TEST:ABC 123                               $1.20
             ! TEST:DEF 123                             $2.30
             TEST:GHI
+        "
+    );
+}
+
+#[test]
+fn format_amounts() {
+    let source = textwrap::dedent(
+        "
+        2018/10/01 Payee 123
+          ABC  $1.20
+          DEF  -$2.30
+          GHI  $-4.50
+        ",
+    );
+
+    insta::assert_snapshot!(
+        format(&source, false).unwrap(),
+        @r"
+        2018/10/01 Payee 123
+            ABC                                        $1.20
+            DEF                                       $-2.30
+            GHI                                       $-4.50
         "
     );
 }
