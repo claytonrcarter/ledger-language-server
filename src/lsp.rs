@@ -291,8 +291,6 @@ impl LanguageServer for Lsp {
         log_debug!(self, "[code_action] {params:?}");
         let start_time = std::time::Instant::now();
 
-        dbg!(&params);
-
         let mut state = self.state.lock().await;
         log_debug!(
             self,
