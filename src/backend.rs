@@ -283,7 +283,7 @@ impl LedgerBackend {
                 if node.range().end_point.column == position.character as usize
                     && node
                         .named_child(0)
-                        .map_or(false, |child| child.kind() == "filename") =>
+                        .is_some_and(|child| child.kind() == "filename") =>
             {
                 if let Some(child) = node.named_child(0) {
                     range = child.range();
