@@ -8,6 +8,7 @@ by Rust and tree-sitter.
 - completion suggestions for payees, accounts, tags and more
 - document formatting & sorting
 - diagnostics
+- code actions
 
 ### Completions
 
@@ -45,6 +46,13 @@ transactions.
 
 Diagnostics are currently limited to a single check: does an `include`d file
 exist.
+
+### Code Actions
+
+Supported code actions include:
+
+- Mark a single transaction as pending, cleared or not cleared.
+- Mark all pending transactions as cleared.
 
 ## Configuration
 
