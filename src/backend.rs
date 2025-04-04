@@ -149,7 +149,7 @@ impl LedgerBackend {
                 return Ok(None);
             }
         }
-        // dbg!(position, node.kind(), node.range());
+        // dbg!(position, node.kind(), node.range(), node.to_sexp());
 
         let mut date_node = None;
         let mut status_node = None;
@@ -157,7 +157,7 @@ impl LedgerBackend {
 
         let mut cursor = node.walk();
         for node in node.named_children(&mut cursor) {
-            if node.kind() == "date" {
+            if node.kind() == "date" || node.kind() == "effective_date" {
                 date_node = Some(node);
             } else if node.kind() == "status" {
                 status_node = Some(node);

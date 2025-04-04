@@ -981,6 +981,90 @@ mod test {
     }
 
     #[test_log::test(tokio::test)]
+    async fn code_actions_with_effective_date() -> anyhow::Result<()> {
+        let mut context = TestContext::new().await?;
+        context.initialize().await?;
+
+        let source = textwrap::dedent(
+            "
+            2024/01/02=2025/03/04 Payee1
+                Account
+                Account
+            ",
+        );
+        context.prep_document(&source).await?;
+
+        let actions = context.code_action(2, 10).await?.unwrap();
+
+        let actions = actions
+            .iter()
+            .map(|a: &CodeActionOrCommand| match a {
+                CodeActionOrCommand::Command(_) => todo!(),
+                CodeActionOrCommand::CodeAction(action) => (
+                    &action.title,
+                    action
+                        .edit
+                        .as_ref()
+                        .unwrap()
+                        .changes
+                        .as_ref()
+                        .unwrap()
+                        .values()
+                        .collect::<Vec<_>>(),
+                ),
+            })
+            .collect::<Vec<_>>();
+        insta::assert_debug_snapshot!(actions,
+            @r#"
+                [
+                    (
+                        "Mark transaction as pending (!)",
+                        [
+                            [
+                                TextEdit {
+                                    range: Range {
+                                        start: Position {
+                                            line: 1,
+                                            character: 21,
+                                        },
+                                        end: Position {
+                                            line: 1,
+                                            character: 21,
+                                        },
+                                    },
+                                    new_text: " !",
+                                },
+                            ],
+                        ],
+                    ),
+                    (
+                        "Mark transaction as cleared (*)",
+                        [
+                            [
+                                TextEdit {
+                                    range: Range {
+                                        start: Position {
+                                            line: 1,
+                                            character: 21,
+                                        },
+                                        end: Position {
+                                            line: 1,
+                                            character: 21,
+                                        },
+                                    },
+                                    new_text: " *",
+                                },
+                            ],
+                        ],
+                    ),
+                ]
+                "#
+        );
+
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
     async fn completions() -> anyhow::Result<()> {
         let mut context = TestContext::new().await?;
         context.initialize().await?;
