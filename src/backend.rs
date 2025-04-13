@@ -143,7 +143,12 @@ impl LedgerBackend {
 
         while node.kind() != "plain_xact" {
             if let Some(parent) = node.parent() {
-                node = parent
+                if parent.id() == node.id() {
+                    // weird loop! bug? why would the parent node id == the
+                    // child node id?
+                    return Ok(None);
+                }
+                node = parent;
             } else {
                 // dbg!(position, node.kind(), node.range());
                 return Ok(None);
@@ -1529,6 +1534,48 @@ mod test {
                 },
             ),
         )
+        "#
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_transaction_status_bug_maybe_invalid_xact() -> Result<()> {
+        let source = vec![
+            textwrap::dedent(
+                "
+                24/01/02 Payee1
+                    Account",
+            ),
+            // a line w/ 4 spaces, like we just hit <enter> to add another account
+            "    ".to_string(),
+            // actual blank line between above and below xacts
+            textwrap::dedent(
+                "
+                24/01/03 Payee2
+                    Account2
+                ",
+            ),
+        ]
+        .join("\n");
+        let mut backend = LedgerBackend::new();
+        backend._test_project_files = Some(vec![]);
+        backend.parse_document(&source);
+
+        let status = backend.transaction_at_position_status(
+            &source,
+            &Position {
+                line: 3,
+                character: 4,
+            },
+        )?;
+
+        // FIXME? not sure this is the correct behavior/result, but it's better
+        // that an inifite loop
+        insta::assert_debug_snapshot!(status,
+        @r#"
+        None
         "#
         );
 

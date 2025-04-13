@@ -1071,6 +1071,59 @@ mod test {
     }
 
     #[test_log::test(tokio::test)]
+    async fn code_actions_bug_with_maybe_invalid_xacts() -> anyhow::Result<()> {
+        let mut context = TestContext::new().await?;
+        context.initialize().await?;
+
+        let source = vec![
+            textwrap::dedent(
+                "
+                24/01/02 Payee1
+                    Account",
+            ),
+            // a line w/ 4 spaces, like we just hit <enter> to add another account
+            "    ".to_string(),
+            // actual blank line between above and below xacts
+            textwrap::dedent(
+                "
+                24/01/03 Payee2
+                    Account2
+                ",
+            ),
+        ]
+        .join("\n");
+        context.prep_document(&source).await?;
+        // ask for actions at pos 3:4 (end of new "empty" account line)
+        let actions = context.code_action(3, 4).await?.unwrap();
+
+        let actions = actions
+            .iter()
+            .map(|a: &CodeActionOrCommand| match a {
+                CodeActionOrCommand::Command(_) => todo!(),
+                CodeActionOrCommand::CodeAction(action) => (
+                    &action.title,
+                    action
+                        .edit
+                        .as_ref()
+                        .unwrap()
+                        .changes
+                        .as_ref()
+                        .unwrap()
+                        .values()
+                        .collect::<Vec<_>>(),
+                ),
+            })
+            .collect::<Vec<_>>();
+        insta::assert_debug_snapshot!(actions,
+            @r#"
+            []
+            "#
+        );
+
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
     async fn completions() -> anyhow::Result<()> {
         let mut context = TestContext::new().await?;
         context.initialize().await?;
