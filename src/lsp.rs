@@ -100,9 +100,15 @@ impl LanguageServer for Lsp {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         log!(
             self,
-            "[initialize] initializing {} {}",
+            "[initialize] initializing {} {} ({} @ {})",
             env!("CARGO_PKG_NAME"),
-            env!("CARGO_PKG_VERSION")
+            env!("CARGO_PKG_VERSION"),
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
+            env!("GIT_HASH"),
         );
         log_debug!(self, "[initialize] {params:#?}");
         log_debug!(
