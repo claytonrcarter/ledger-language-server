@@ -1116,7 +1116,48 @@ mod test {
             .collect::<Vec<_>>();
         insta::assert_debug_snapshot!(actions,
             @r#"
-            []
+            [
+                (
+                    "Mark transaction as pending (!)",
+                    [
+                        [
+                            TextEdit {
+                                range: Range {
+                                    start: Position {
+                                        line: 1,
+                                        character: 8,
+                                    },
+                                    end: Position {
+                                        line: 1,
+                                        character: 8,
+                                    },
+                                },
+                                new_text: " !",
+                            },
+                        ],
+                    ],
+                ),
+                (
+                    "Mark transaction as cleared (*)",
+                    [
+                        [
+                            TextEdit {
+                                range: Range {
+                                    start: Position {
+                                        line: 1,
+                                        character: 8,
+                                    },
+                                    end: Position {
+                                        line: 1,
+                                        character: 8,
+                                    },
+                                },
+                                new_text: " *",
+                            },
+                        ],
+                    ],
+                ),
+            ]
             "#
         );
 
