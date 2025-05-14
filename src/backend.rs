@@ -1565,17 +1565,23 @@ mod test {
 
         let status = backend.transaction_at_position_status(
             &source,
+            // cursor at end of "    " line
             &Position {
                 line: 3,
                 character: 4,
             },
         )?;
 
-        // FIXME? not sure this is the correct behavior/result, but it's better
-        // that an inifite loop
         insta::assert_debug_snapshot!(status,
         @r#"
-        None
+        Some(
+            NotCleared(
+                Position {
+                    line: 1,
+                    character: 8,
+                },
+            ),
+        )
         "#
         );
 
