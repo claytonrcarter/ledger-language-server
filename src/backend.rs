@@ -781,13 +781,13 @@ mod test {
     fn test_completions_payees() {
         let source = textwrap::dedent(
             "
-            24/01/02 Payee1
+            2024/01/02 Payee1
                 Account
 
-            24/02/03 Payee2
+            2024/02/03 Payee2
                 Account
 
-            24/02/03 Mom & Dad
+            2024/02/03 Mom & Dad
                 Account
             ",
         );
@@ -796,7 +796,7 @@ mod test {
             &source,
             &Position {
                 line: 1,
-                character: 10,
+                character: 12,
             },
             None,
         );
@@ -807,11 +807,11 @@ mod test {
             Range {
                 start: Position {
                     line: 1,
-                    character: 9,
+                    character: 11,
                 },
                 end: Position {
                     line: 1,
-                    character: 15,
+                    character: 17,
                 },
             },
             [
@@ -831,15 +831,15 @@ mod test {
     fn test_completions_accounts() {
         let source = textwrap::dedent(
             "
-            24/01/02 Payee1
+            2024/01/02 Payee1
                 Account1  $1
                 Account2
 
-            24/02/03 Payee2
+            2024/02/03 Payee2
                 Account2  $2
                 Account3
 
-            24/02/03 Mom & Dad
+            2024/02/03 Mom & Dad
                 One & Two  $2
                 Three & Four
             ",
@@ -1210,7 +1210,7 @@ mod test {
     fn test_completions_tags() {
         let source = textwrap::dedent(
             "
-            24/01/02 Payee
+            2024/01/02 Payee
                 ; Tag1: foo
                 ; Tag2: bar
                 ;
@@ -1369,7 +1369,7 @@ mod test {
     fn test_completions_from_included_files() {
         let included = textwrap::dedent(
             "
-            24/01/02 IncludedPayee
+            2024/01/02 IncludedPayee
                 IncludedAccount
             ",
         );
@@ -1377,7 +1377,7 @@ mod test {
             "
             include foo.ledger
 
-            24/01/02 Payee
+            2024/01/02 Payee
                 Account
             ",
         );
@@ -1403,11 +1403,11 @@ mod test {
             Range {
                 start: Position {
                     line: 3,
-                    character: 9,
+                    character: 11,
                 },
                 end: Position {
                     line: 3,
-                    character: 14,
+                    character: 16,
                 },
             },
             [
@@ -1448,13 +1448,13 @@ mod test {
     fn test_transaction_status() -> Result<()> {
         let source = textwrap::dedent(
             "
-            24/01/02 Payee1
+            2024/01/02 Payee1
                 Account
 
-            24/02/03 ! Payee2
+            2024/02/03 ! Payee2
                 Account
 
-            24/02/03 * Mom & Dad
+            2024/02/03 * Mom & Dad
                 Account
             ",
         );
@@ -1476,7 +1476,7 @@ mod test {
             NotCleared(
                 Position {
                     line: 1,
-                    character: 8,
+                    character: 10,
                 },
             ),
         )
@@ -1498,11 +1498,11 @@ mod test {
                 Range {
                     start: Position {
                         line: 4,
-                        character: 8,
+                        character: 10,
                     },
                     end: Position {
                         line: 4,
-                        character: 10,
+                        character: 12,
                     },
                 },
             ),
@@ -1525,11 +1525,11 @@ mod test {
                 Range {
                     start: Position {
                         line: 7,
-                        character: 8,
+                        character: 10,
                     },
                     end: Position {
                         line: 7,
-                        character: 10,
+                        character: 12,
                     },
                 },
             ),
@@ -1545,7 +1545,7 @@ mod test {
         let source = vec![
             textwrap::dedent(
                 "
-                24/01/02 Payee1
+                2024/01/02 Payee1
                     Account",
             ),
             // a line w/ 4 spaces, like we just hit <enter> to add another account
@@ -1553,7 +1553,7 @@ mod test {
             // actual blank line between above and below xacts
             textwrap::dedent(
                 "
-                24/01/03 Payee2
+                2024/01/03 Payee2
                     Account2
                 ",
             ),
@@ -1578,7 +1578,7 @@ mod test {
             NotCleared(
                 Position {
                     line: 1,
-                    character: 8,
+                    character: 10,
                 },
             ),
         )
@@ -1592,16 +1592,16 @@ mod test {
     fn test_pending_transaction_status_ranges() -> Result<()> {
         let source = textwrap::dedent(
             "
-            24/01/02 ! Payee1
+            2024/01/02 ! Payee1
                 Account
 
-            24/02/03 Payee2
+            2024/02/03 Payee2
                 Account
 
-            24/02/03 ! Mom & Dad
+            2024/02/03 ! Mom & Dad
                 Account
 
-            24/02/03 Payee1
+            2024/02/03 Payee1
                 Account
             ",
         );
@@ -1618,21 +1618,21 @@ mod test {
             Range {
                 start: Position {
                     line: 1,
-                    character: 9,
+                    character: 11,
                 },
                 end: Position {
                     line: 1,
-                    character: 10,
+                    character: 12,
                 },
             },
             Range {
                 start: Position {
                     line: 7,
-                    character: 9,
+                    character: 11,
                 },
                 end: Position {
                     line: 7,
-                    character: 10,
+                    character: 12,
                 },
             },
         ]
