@@ -1,6 +1,8 @@
 use anyhow::{anyhow, bail, Result};
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::LazyLock;
 use tower_lsp::lsp_types::Range as LspRange;
 use tower_lsp::lsp_types::*;
 use tree_sitter::{Language, Node, Parser, Point, Tree};
@@ -8,6 +10,13 @@ use type_sitter::StreamingIterator;
 use walkdir::WalkDir;
 
 use crate::{backend_format, contents_of_path};
+
+// Match `tag: value` and `:tag:`; ledger tags don't contain whitespace, and value tags
+// must start the (trimmed) line but do not need to have a value.
+static TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
+    #[allow(clippy::unwrap_used)]
+    Regex::new(r"(?<just_tag>(^| ):\S+:( |$))|(?<tag_with_value>^\S+:( |$))").unwrap()
+});
 
 fn substring(source: &[u8], start_byte: usize, end_byte: usize) -> Result<String> {
     Ok(
@@ -17,6 +26,7 @@ fn substring(source: &[u8], start_byte: usize, end_byte: usize) -> Result<String
     )
 }
 
+/// Get the start/end indices of a word that may be at `index`.
 fn word_boundary_range(line: &str, index: usize, addl_end_char: Option<char>) -> (usize, usize) {
     let start_boundary = vec![' ', '\t'];
     let end_boundary = addl_end_char.map_or_else(
@@ -238,6 +248,9 @@ impl LedgerBackend {
         Ok(ranges)
     }
 
+    /// Get completions relevant to `position` in the the `content` document.
+    ///
+    /// `buffer_path` and `visited` are used to track included documents
     pub fn completions_for_position(
         &mut self,
         buffer_path: &str,
@@ -264,7 +277,10 @@ impl LedgerBackend {
 
         let line_content = content.lines().nth(position.line as usize).unwrap_or("");
 
-        // dbg!(position, node.kind(), node.range());
+        log::debug!("{:?} Node: {} {:?}", position, node.kind(), node.range());
+        log::debug!("line: {line_content:?}");
+        log::debug!("posn: {}^", " ".repeat(position.character as usize));
+
         match node.kind() {
             "account" => self.populate_completions(
                 &mut completions,
@@ -348,18 +364,41 @@ impl LedgerBackend {
                     &|note| {
                         if note == current_node_content {
                             // don't include current node content
-                            return None;
+                            return Vec::new();
                         }
 
-                        match note
-                            // https://ledger-cli.org/doc/ledger3.html#Commenting-on-your-Journal
-                            .trim_start_matches([' ', '\t', ';', '#', '%', '|', '*'])
-                            .split_once(": ")
-                        {
-                            Some((tag, _)) if !tag.contains(' ') => {
-                                Some(LedgerCompletion::Tag(tag.to_owned()))
+                        // trim leading whitespace and comment chars
+                        // https://ledger-cli.org/doc/ledger3.html#Commenting-on-your-Journal
+                        let trimmed = note.trim_start_matches([' ', '\t', ';', '#', '%', '|', '*']);
+
+                        log::debug!("note content: {note:?}");
+                        log::debug!("trimmed: {trimmed:?}");
+
+                        let captures = TAG_RE.captures(trimmed);
+                        log::debug!("captures: {captures:?}");
+
+                        match captures {
+                            Some(captures) if captures.name("just_tag").is_some() => captures
+                                ["just_tag"]
+                                .trim()
+                                .split(':')
+                                .filter(|tag| !tag.is_empty())
+                                .map(|tag| LedgerCompletion::Tag(format!(":{tag}:")))
+                                .collect(),
+                            Some(captures) if captures.name("tag_with_value").is_some() => {
+                                let mut tag = captures["tag_with_value"].to_string();
+                                if !tag.ends_with(' ') {
+                                    tag.push(' ');
+                                }
+                                vec![LedgerCompletion::Tag(tag)]
                             }
-                            Some(_) | None => None,
+                            Some(captures) => {
+                                log::error!(
+                                    "tag regex failure; this should be unreachable: {captures:?}"
+                                );
+                                Vec::new()
+                            }
+                            None => Vec::new(),
                         }
                     },
                     visited,
@@ -405,7 +444,7 @@ impl LedgerBackend {
         })
     }
 
-    pub fn populate_completions<F>(
+    pub fn populate_completions<F, I>(
         &mut self,
         completions: &mut HashSet<LedgerCompletion>,
         buffer_path: &str,
@@ -415,7 +454,8 @@ impl LedgerBackend {
         visited: &mut HashSet<String>,
     ) -> Result<()>
     where
-        F: Fn(String) -> Option<LedgerCompletion>,
+        F: Fn(String) -> I,
+        I: IntoIterator<Item = LedgerCompletion>,
     {
         let current_dir = match Path::new(buffer_path).parent() {
             Some(dir) => dir,
@@ -453,9 +493,7 @@ impl LedgerBackend {
             // query as passed in
             for n in m.nodes_for_capture_index(0) {
                 let capture_text = substring(source, n.start_byte(), n.end_byte())?;
-                if let Some(completion) = completion_fn(capture_text) {
-                    completions.insert(completion);
-                }
+                completions.extend(completion_fn(capture_text));
             }
 
             // (filename) @filename
@@ -776,6 +814,10 @@ impl LedgerBackend {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    fn init_logging() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
 
     #[test]
     fn test_completions_payees() {
@@ -1206,8 +1248,11 @@ mod test {
         );
     }
 
+    /// Test that `tag: value` style tags are offered as completions.
     #[test]
-    fn test_completions_tags() {
+    fn test_completions_tags_with_value() {
+        init_logging();
+
         let source = textwrap::dedent(
             "
             2024/01/02 Payee
@@ -1219,6 +1264,7 @@ mod test {
             ",
         );
 
+        // blank line, after the ;
         let completions = get_completions(
             &source,
             &Position {
@@ -1243,16 +1289,17 @@ mod test {
             },
             [
                 Tag(
-                    "Tag1",
+                    "Tag1: ",
                 ),
                 Tag(
-                    "Tag2",
+                    "Tag2: ",
                 ),
             ],
         )
         "#
         );
 
+        // Tag2, after the T
         let completions = get_completions(
             &source,
             &Position {
@@ -1276,13 +1323,14 @@ mod test {
             },
             [
                 Tag(
-                    "Tag1",
+                    "Tag1: ",
                 ),
             ],
         )
         "#
         );
 
+        // just the T, after the T
         let completions = get_completions(
             &source,
             &Position {
@@ -1306,10 +1354,270 @@ mod test {
             },
             [
                 Tag(
-                    "Tag1",
+                    "Tag1: ",
                 ),
                 Tag(
-                    "Tag2",
+                    "Tag2: ",
+                ),
+            ],
+        )
+        "#
+        );
+    }
+
+    /// Test that `:tag:` style tags are offered as completions.
+    #[test]
+    fn test_completions_tags() {
+        init_logging();
+
+        let source = textwrap::dedent(
+            "
+            2024/01/02 Payee
+                ; :Tag1:
+                ; :Tag2:
+                ;
+                ; :
+                ; :T
+                Account
+            ",
+        );
+
+        // just :, after the :
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 5,
+                character: 7,
+            },
+            None,
+        );
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 5,
+                    character: 6,
+                },
+                end: Position {
+                    line: 5,
+                    character: 7,
+                },
+            },
+            [
+                Tag(
+                    ":Tag1:",
+                ),
+                Tag(
+                    ":Tag2:",
+                ),
+            ],
+        )
+        "#
+        );
+
+        // :Tag2:, after the T
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 3,
+                character: 8,
+            },
+            None,
+        );
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 3,
+                    character: 6,
+                },
+                end: Position {
+                    line: 3,
+                    character: 11,
+                },
+            },
+            [
+                Tag(
+                    ":Tag1:",
+                ),
+            ],
+        )
+        "#
+        );
+
+        // just the :T, after the T
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 6,
+                character: 8,
+            },
+            None,
+        );
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 6,
+                    character: 6,
+                },
+                end: Position {
+                    line: 6,
+                    character: 8,
+                },
+            },
+            [
+                Tag(
+                    ":Tag1:",
+                ),
+                Tag(
+                    ":Tag2:",
+                ),
+            ],
+        )
+        "#
+        );
+    }
+
+    #[test]
+    fn test_completions_tags_are_deduped() {
+        init_logging();
+
+        let source = textwrap::dedent(
+            "
+            2024/01/02 Payee
+                ; :
+                ; Tag1: with value
+                ; Tag1:
+                ; :Tag2:
+                ; :Tag3:Tag2:
+                Account  $1
+                Account
+            ",
+        );
+
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 2,
+                character: 6,
+            },
+            None,
+        );
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 2,
+                    character: 6,
+                },
+                end: Position {
+                    line: 2,
+                    character: 6,
+                },
+            },
+            [
+                Tag(
+                    ":Tag2:",
+                ),
+                Tag(
+                    ":Tag3:",
+                ),
+                Tag(
+                    "Tag1: ",
+                ),
+            ],
+        )
+        "#
+        );
+    }
+
+    /// Confirm that our tag matching code aligns with ledger's; ie, that we
+    /// aren't missing anything nor including anything extra.
+    #[test]
+    fn test_completions_tags_align_with_ledger() {
+        init_logging();
+
+        // Paste this into a ledger file and run `ledger -f <file> tags` to
+        // display which are supported. Note that `Tag9:Tag10:` looks like a
+        // bug, but is valid according to ledger.
+        let source = textwrap::dedent(
+            "
+            2024/01/02 Payee
+                ; :
+                ;
+                ; :Tag1:
+                ; :Tag2:Tag3:
+                ; NotTag4:NotTag5:NotTag6
+                ; :NotTag7:NotTag8
+                ; Tag9:Tag10:
+                ; NotTag11 :Tag12:Tag13: NotTag14
+                ; http://example.com:80
+                ; :Tag15: :NotATag16:
+                ;
+                ; Tag30: Value30
+                ; Tag31:
+                ; NotA Tag32: Value32
+                ; NotATag33:Value33
+                ; http://example.com
+                Account  $1
+                Account
+            ",
+        );
+
+        // on then line with just :, after the :
+        let completions = get_completions(
+            &source,
+            &Position {
+                line: 2,
+                character: 7,
+            },
+            None,
+        );
+        insta::assert_debug_snapshot!(completions,
+        @r#"
+        (
+            Range {
+                start: Position {
+                    line: 2,
+                    character: 6,
+                },
+                end: Position {
+                    line: 2,
+                    character: 7,
+                },
+            },
+            [
+                Tag(
+                    ":Tag12:",
+                ),
+                Tag(
+                    ":Tag13:",
+                ),
+                Tag(
+                    ":Tag15:",
+                ),
+                Tag(
+                    ":Tag1:",
+                ),
+                Tag(
+                    ":Tag2:",
+                ),
+                Tag(
+                    ":Tag3:",
+                ),
+                Tag(
+                    "Tag30: ",
+                ),
+                Tag(
+                    "Tag31: ",
+                ),
+                Tag(
+                    "Tag9:Tag10: ",
                 ),
             ],
         )
