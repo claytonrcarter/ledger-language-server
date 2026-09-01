@@ -783,7 +783,10 @@ impl LedgerBackend {
             "account" if include_declaration => "(account) @account",
             "account" => "(posting (account) @account)",
 
-            "payee" => "(payee) @payee",
+            // Same as above, but payee is only used in fewer places.
+            "payee" if include_declaration => "(payee) @payee",
+            "payee" => "(plain_xact (payee) @payee)",
+
             _ => return Ok(LocationBasedResult::None),
         };
 

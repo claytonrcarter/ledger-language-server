@@ -1473,6 +1473,7 @@ mod test {
 
         let source = textwrap::dedent(
             "
+            payee Payee1
             account Account1
             account Account2
 
@@ -1492,9 +1493,9 @@ mod test {
         context.prep_document(&source).await?;
 
         {
-            // references for Payee1, on line 4
+            // references for Payee1, on line 5, with decl
             let mut references: Vec<Range> = context
-                .reference(4, 12, false)
+                .reference(5, 12, true)
                 .await?
                 .unwrap()
                 .into_iter()
@@ -1507,21 +1508,31 @@ mod test {
             [
                 Range {
                     start: Position {
-                        line: 4,
+                        line: 1,
+                        character: 6,
+                    },
+                    end: Position {
+                        line: 1,
+                        character: 12,
+                    },
+                },
+                Range {
+                    start: Position {
+                        line: 5,
                         character: 11,
                     },
                     end: Position {
-                        line: 4,
+                        line: 5,
                         character: 17,
                     },
                 },
                 Range {
                     start: Position {
-                        line: 12,
+                        line: 13,
                         character: 11,
                     },
                     end: Position {
-                        line: 12,
+                        line: 13,
                         character: 17,
                     },
                 },
@@ -1531,9 +1542,9 @@ mod test {
         }
 
         {
-            // references for Account2, on line 9; including decl
+            // references for Payee1, on line 5, without decl
             let mut references: Vec<Range> = context
-                .reference(9, 7, true)
+                .reference(5, 12, false)
                 .await?
                 .unwrap()
                 .into_iter()
@@ -1546,21 +1557,60 @@ mod test {
             [
                 Range {
                     start: Position {
-                        line: 2,
+                        line: 5,
+                        character: 11,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 17,
+                    },
+                },
+                Range {
+                    start: Position {
+                        line: 13,
+                        character: 11,
+                    },
+                    end: Position {
+                        line: 13,
+                        character: 17,
+                    },
+                },
+            ]
+            "#
+            );
+        }
+
+        {
+            // references for Account2, on line 10; including decl
+            let mut references: Vec<Range> = context
+                .reference(10, 7, true)
+                .await?
+                .unwrap()
+                .into_iter()
+                .map(|l| l.range)
+                .collect();
+            references.sort_by(|a, b| a.start.line.cmp(&b.start.line));
+
+            insta::assert_debug_snapshot!(references,
+                @r#"
+            [
+                Range {
+                    start: Position {
+                        line: 3,
                         character: 8,
                     },
                     end: Position {
-                        line: 2,
+                        line: 3,
                         character: 16,
                     },
                 },
                 Range {
                     start: Position {
-                        line: 9,
+                        line: 10,
                         character: 4,
                     },
                     end: Position {
-                        line: 9,
+                        line: 10,
                         character: 12,
                     },
                 },
@@ -1570,9 +1620,9 @@ mod test {
         }
 
         {
-            // references for Account2, on line 9; EXCLUDING decl
+            // references for Account2, on line 10; EXCLUDING decl
             let mut references: Vec<Range> = context
-                .reference(9, 7, false)
+                .reference(10, 7, false)
                 .await?
                 .unwrap()
                 .into_iter()
@@ -1585,11 +1635,11 @@ mod test {
             [
                 Range {
                     start: Position {
-                        line: 9,
+                        line: 10,
                         character: 4,
                     },
                     end: Position {
-                        line: 9,
+                        line: 10,
                         character: 12,
                     },
                 },
@@ -1599,9 +1649,9 @@ mod test {
         }
 
         {
-            // references for Account1, on line 13, excluding decl
+            // references for Account1, on line 14, excluding decl
             let mut references: Vec<Range> = context
-                .reference(13, 8, false)
+                .reference(14, 8, false)
                 .await?
                 .unwrap()
                 .into_iter()
@@ -1614,21 +1664,21 @@ mod test {
             [
                 Range {
                     start: Position {
-                        line: 5,
+                        line: 6,
                         character: 4,
                     },
                     end: Position {
-                        line: 5,
+                        line: 6,
                         character: 12,
                     },
                 },
                 Range {
                     start: Position {
-                        line: 13,
+                        line: 14,
                         character: 4,
                     },
                     end: Position {
-                        line: 13,
+                        line: 14,
                         character: 12,
                     },
                 },

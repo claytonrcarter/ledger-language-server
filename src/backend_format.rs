@@ -1,6 +1,6 @@
 use anyhow::Result;
 use anyhow::{anyhow, bail};
-use ledger::anon_unions::AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective as Directives;
+use ledger::anon_unions::AccountDirective_CharDirective_CommodityDirective_Option_PayeeDirective_TagDirective_WordDirective as Directives;
 use ledger::anon_unions::Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status as PostingFields;
 use ledger::anon_unions::AutomatedXact_PeriodicXact_PlainXact as Transactions;
 use ledger::anon_unions::BlockComment_Comment_Directive_Test_Xact as JournalItems;
@@ -356,10 +356,12 @@ impl<'tree> Directive {
         cursor_fn: T,
     ) -> Result<Self> {
         use ledger::anon_unions::Account_AccountSubdirective_Comment as AccountDirectiveNodes;
+        use ledger::anon_unions::Comment_Payee_PayeeSubdirective as PayeeDirectiveNodes;
 
         let mut d;
         let mut cursor = cursor_fn();
         match directive.child().map_err(|err| anyhow!("{err}"))? {
+            // NOTE: nearly identical to Directives::PayeeDirective
             Directives::AccountDirective(directive) => {
                 d = Directive::new(directive.range(), substring(content, directive.range()));
 
@@ -371,7 +373,6 @@ impl<'tree> Directive {
                         AccountDirectiveNodes::AccountSubdirective(subdirective) => {
                             match subdirective.child() {
                                 Some(Ok(subdirective)) => {
-                                    // FIXME consider normalizing/formatting subdirectives depending on thier type?
                                     d.subdirectives.push(Directive::new(
                                         subdirective.range(),
                                         substring(content, subdirective.range()),
@@ -383,7 +384,42 @@ impl<'tree> Directive {
                         }
                         AccountDirectiveNodes::Comment(comment) => {
                             match d.subdirectives.as_mut_slice() {
-                                [last_subdirective] | [.., last_subdirective] => {
+                                [.., last_subdirective] => {
+                                    last_subdirective
+                                        .comments
+                                        .push(substring(content, comment.range()));
+                                }
+                                [] => d.comments.push(substring(content, comment.range())),
+                            }
+                        }
+                    }
+                }
+            }
+
+            // NOTE: nearly identical to Directives::AccountDirective
+            Directives::PayeeDirective(directive) => {
+                d = Directive::new(directive.range(), substring(content, directive.range()));
+
+                for child in directive.children(&mut cursor) {
+                    match child.map_err(|err| anyhow!("{err}"))? {
+                        PayeeDirectiveNodes::Payee(payee) => {
+                            d.content = substring(content, payee.range());
+                        }
+                        PayeeDirectiveNodes::PayeeSubdirective(subdirective) => {
+                            match subdirective.child() {
+                                Some(Ok(subdirective)) => {
+                                    d.subdirectives.push(Directive::new(
+                                        subdirective.range(),
+                                        substring(content, subdirective.range()),
+                                    ));
+                                }
+                                Some(Err(err)) => bail!("{err}"),
+                                None => {}
+                            }
+                        }
+                        PayeeDirectiveNodes::Comment(comment) => {
+                            match d.subdirectives.as_mut_slice() {
+                                [.., last_subdirective] => {
                                     last_subdirective
                                         .comments
                                         .push(substring(content, comment.range()));
@@ -1113,6 +1149,28 @@ fn format_directives() {
         account Foo
             ; comment 1
             alias Bar
+            ; comment 2
+        "
+    );
+}
+
+#[test]
+fn format_payee_directives() {
+    let source = textwrap::dedent(
+        "
+        payee      Foo Bar
+             ; comment 1
+              alias    FooBar
+              ; comment 2
+        ",
+    );
+
+    insta::assert_snapshot!(
+        format(&source, false).unwrap(),
+        @r"
+        payee Foo Bar
+            ; comment 1
+            alias FooBar
             ; comment 2
         "
     );

@@ -894,7 +894,7 @@ impl<'tree> ::type_sitter::Node<'tree> for DefaultSubdirective<'tree> {
         self.0
     }
 }
-#[doc = "Typed node `directive`\n\nThis node has a named child of type `{account_directive | char_directive | commodity_directive | option | tag_directive | word_directive}`:\n\n- [`AccountDirective`]\n- [`CharDirective`]\n- [`CommodityDirective`]\n- [`Option`]\n- [`TagDirective`]\n- [`WordDirective`]\n\n"]
+#[doc = "Typed node `directive`\n\nThis node has a named child of type `{account_directive | char_directive | commodity_directive | option | payee_directive | tag_directive | word_directive}`:\n\n- [`AccountDirective`]\n- [`CharDirective`]\n- [`CommodityDirective`]\n- [`Option`]\n- [`PayeeDirective`]\n- [`TagDirective`]\n- [`WordDirective`]\n\n"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 #[allow(non_camel_case_types)]
@@ -904,7 +904,7 @@ pub struct Directive<'tree>(::type_sitter::raw::Node<'tree>);
 impl<'tree> Directive<'tree> {}
 #[automatically_derived]
 impl<'tree> ::type_sitter::HasChild<'tree> for Directive<'tree> {
-    type Child = anon_unions :: AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective < 'tree > ;
+    type Child = anon_unions :: AccountDirective_CharDirective_CommodityDirective_Option_PayeeDirective_TagDirective_WordDirective < 'tree > ;
 }
 #[automatically_derived]
 impl<'tree> ::type_sitter::Node<'tree> for Directive<'tree> {
@@ -1490,6 +1490,106 @@ impl<'tree> ::type_sitter::Node<'tree> for Payee<'tree> {
     #[inline]
     unsafe fn from_raw_unchecked(node: ::type_sitter::raw::Node<'tree>) -> Self {
         debug_assert_eq!(node.kind(), "payee");
+        Self(node)
+    }
+    #[inline]
+    fn raw(&self) -> &::type_sitter::raw::Node<'tree> {
+        &self.0
+    }
+    #[inline]
+    fn raw_mut(&mut self) -> &mut ::type_sitter::raw::Node<'tree> {
+        &mut self.0
+    }
+    #[inline]
+    fn into_raw(self) -> ::type_sitter::raw::Node<'tree> {
+        self.0
+    }
+}
+#[doc = "Typed node `payee_directive`\n\nThis node has named children of type `{comment | payee | payee_subdirective}+`:\n\n- [`Comment`]\n- [`Payee`]\n- [`PayeeSubdirective`]\n\n"]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+#[allow(non_camel_case_types)]
+pub struct PayeeDirective<'tree>(::type_sitter::raw::Node<'tree>);
+#[automatically_derived]
+#[allow(unused)]
+impl<'tree> PayeeDirective<'tree> {}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasChildren<'tree> for PayeeDirective<'tree> {
+    type Child = anon_unions::Comment_Payee_PayeeSubdirective<'tree>;
+}
+#[automatically_derived]
+impl<'tree> ::type_sitter::Node<'tree> for PayeeDirective<'tree> {
+    type WithLifetime<'a> = PayeeDirective<'a>;
+    const KIND: &'static str = "payee_directive";
+    #[inline]
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
+        if node.kind() == "payee_directive" {
+            Ok(Self(node))
+        } else {
+            Err(::type_sitter::IncorrectKind::new::<Self>(node))
+        }
+    }
+    #[inline]
+    unsafe fn from_raw_unchecked(node: ::type_sitter::raw::Node<'tree>) -> Self {
+        debug_assert_eq!(node.kind(), "payee_directive");
+        Self(node)
+    }
+    #[inline]
+    fn raw(&self) -> &::type_sitter::raw::Node<'tree> {
+        &self.0
+    }
+    #[inline]
+    fn raw_mut(&mut self) -> &mut ::type_sitter::raw::Node<'tree> {
+        &mut self.0
+    }
+    #[inline]
+    fn into_raw(self) -> ::type_sitter::raw::Node<'tree> {
+        self.0
+    }
+}
+#[doc = "Typed node `payee_subdirective`\n\nThis node has an optional named child of type `alias_subdirective?` ([`AliasSubdirective`])\n"]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+#[allow(non_camel_case_types)]
+pub struct PayeeSubdirective<'tree>(::type_sitter::raw::Node<'tree>);
+#[automatically_derived]
+#[allow(unused)]
+impl<'tree> PayeeSubdirective<'tree> {
+    #[doc = "Get the node's only not-extra named child, if it has one.\n\nThis child has type `alias_subdirective?` ([`AliasSubdirective`])"]
+    #[inline]
+    pub fn alias_subdirective(
+        &self,
+    ) -> ::std::option::Option<::type_sitter::NodeResult<'tree, AliasSubdirective<'tree>>> {
+        (0..::type_sitter::Node::raw(self).named_child_count())
+            .map(|i| ::type_sitter::Node::raw(self).named_child(i).unwrap())
+            .filter(|n| !n.is_extra())
+            .next()
+            .map(<AliasSubdirective<'tree> as ::type_sitter::Node<'tree>>::try_from_raw)
+    }
+}
+#[automatically_derived]
+impl<'tree> ::type_sitter::HasOptionalChild<'tree> for PayeeSubdirective<'tree> {
+    type Child = AliasSubdirective<'tree>;
+}
+#[automatically_derived]
+impl<'tree> ::type_sitter::Node<'tree> for PayeeSubdirective<'tree> {
+    type WithLifetime<'a> = PayeeSubdirective<'a>;
+    const KIND: &'static str = "payee_subdirective";
+    #[inline]
+    fn try_from_raw(
+        node: ::type_sitter::raw::Node<'tree>,
+    ) -> ::type_sitter::NodeResult<'tree, Self> {
+        if node.kind() == "payee_subdirective" {
+            Ok(Self(node))
+        } else {
+            Err(::type_sitter::IncorrectKind::new::<Self>(node))
+        }
+    }
+    #[inline]
+    unsafe fn from_raw_unchecked(node: ::type_sitter::raw::Node<'tree>) -> Self {
+        debug_assert_eq!(node.kind(), "payee_subdirective");
         Self(node)
     }
     #[inline]
@@ -3486,6 +3586,46 @@ pub mod unnamed {
             self.0
         }
     }
+    #[doc = "Typed node `uuid`\n\nThis node has no named children\n"]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[repr(transparent)]
+    #[allow(non_camel_case_types)]
+    pub struct Uuid<'tree>(::type_sitter::raw::Node<'tree>);
+    #[automatically_derived]
+    #[allow(unused)]
+    impl<'tree> Uuid<'tree> {}
+    #[automatically_derived]
+    impl<'tree> ::type_sitter::Node<'tree> for Uuid<'tree> {
+        type WithLifetime<'a> = Uuid<'a>;
+        const KIND: &'static str = "uuid";
+        #[inline]
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
+            if node.kind() == "uuid" {
+                Ok(Self(node))
+            } else {
+                Err(::type_sitter::IncorrectKind::new::<Self>(node))
+            }
+        }
+        #[inline]
+        unsafe fn from_raw_unchecked(node: ::type_sitter::raw::Node<'tree>) -> Self {
+            debug_assert_eq!(node.kind(), "uuid");
+            Self(node)
+        }
+        #[inline]
+        fn raw(&self) -> &::type_sitter::raw::Node<'tree> {
+            &self.0
+        }
+        #[inline]
+        fn raw_mut(&mut self) -> &mut ::type_sitter::raw::Node<'tree> {
+            &mut self.0
+        }
+        #[inline]
+        fn into_raw(self) -> ::type_sitter::raw::Node<'tree> {
+            self.0
+        }
+    }
     #[doc = "Typed node `week`\n\nThis node has no named children\n"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     #[repr(transparent)]
@@ -4654,168 +4794,25 @@ pub mod symbols {
 pub mod anon_unions {
     #[allow(unused_imports)]
     use super::*;
-    #[doc = "One of `{account_directive | char_directive | commodity_directive | option | tag_directive | word_directive}`:\n- [`AccountDirective`]\n- [`CharDirective`]\n- [`CommodityDirective`]\n- [`Option`]\n- [`TagDirective`]\n- [`WordDirective`]"]
+    #[doc = "One of `{account_directive | char_directive | commodity_directive | option | payee_directive | tag_directive | word_directive}`:\n- [`AccountDirective`]\n- [`CharDirective`]\n- [`CommodityDirective`]\n- [`Option`]\n- [`PayeeDirective`]\n- [`TagDirective`]\n- [`WordDirective`]"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types)]
-    pub enum AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective<
+    pub enum AccountDirective_CharDirective_CommodityDirective_Option_PayeeDirective_TagDirective_WordDirective<
         'tree,
     > {
         AccountDirective(AccountDirective<'tree>),
         CharDirective(CharDirective<'tree>),
         CommodityDirective(CommodityDirective<'tree>),
         Option(Option<'tree>),
+        PayeeDirective(PayeeDirective<'tree>),
         TagDirective(TagDirective<'tree>),
         WordDirective(WordDirective<'tree>),
     }
     #[automatically_derived]
     #[allow(unused)]
-    impl<'tree>
-        AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective<'tree>
-    {
-        #[doc = "Returns the node if it is of type `account_directive` ([`AccountDirective`]), otherwise returns `None`"]
-        #[inline]
-        pub fn as_account_directive(self) -> ::std::option::Option<AccountDirective<'tree>> {
-            #[allow(irrefutable_let_patterns)]
-            if let Self::AccountDirective(x) = self {
-                Some(x)
-            } else {
-                None
-            }
-        }
-        #[doc = "Returns the node if it is of type `char_directive` ([`CharDirective`]), otherwise returns `None`"]
-        #[inline]
-        pub fn as_char_directive(self) -> ::std::option::Option<CharDirective<'tree>> {
-            #[allow(irrefutable_let_patterns)]
-            if let Self::CharDirective(x) = self {
-                Some(x)
-            } else {
-                None
-            }
-        }
-        #[doc = "Returns the node if it is of type `commodity_directive` ([`CommodityDirective`]), otherwise returns `None`"]
-        #[inline]
-        pub fn as_commodity_directive(self) -> ::std::option::Option<CommodityDirective<'tree>> {
-            #[allow(irrefutable_let_patterns)]
-            if let Self::CommodityDirective(x) = self {
-                Some(x)
-            } else {
-                None
-            }
-        }
-        #[doc = "Returns the node if it is of type `option` ([`Option`]), otherwise returns `None`"]
-        #[inline]
-        pub fn as_option(self) -> ::std::option::Option<Option<'tree>> {
-            #[allow(irrefutable_let_patterns)]
-            if let Self::Option(x) = self {
-                Some(x)
-            } else {
-                None
-            }
-        }
-        #[doc = "Returns the node if it is of type `tag_directive` ([`TagDirective`]), otherwise returns `None`"]
-        #[inline]
-        pub fn as_tag_directive(self) -> ::std::option::Option<TagDirective<'tree>> {
-            #[allow(irrefutable_let_patterns)]
-            if let Self::TagDirective(x) = self {
-                Some(x)
-            } else {
-                None
-            }
-        }
-        #[doc = "Returns the node if it is of type `word_directive` ([`WordDirective`]), otherwise returns `None`"]
-        #[inline]
-        pub fn as_word_directive(self) -> ::std::option::Option<WordDirective<'tree>> {
-            #[allow(irrefutable_let_patterns)]
-            if let Self::WordDirective(x) = self {
-                Some(x)
-            } else {
-                None
-            }
-        }
-    }
+    impl < 'tree > AccountDirective_CharDirective_CommodityDirective_Option_PayeeDirective_TagDirective_WordDirective < 'tree > { # [doc = "Returns the node if it is of type `account_directive` ([`AccountDirective`]), otherwise returns `None`"] # [inline] pub fn as_account_directive (self) -> :: std :: option :: Option < AccountDirective < 'tree > > { # [allow (irrefutable_let_patterns)] if let Self :: AccountDirective (x) = self { Some (x) } else { None } } # [doc = "Returns the node if it is of type `char_directive` ([`CharDirective`]), otherwise returns `None`"] # [inline] pub fn as_char_directive (self) -> :: std :: option :: Option < CharDirective < 'tree > > { # [allow (irrefutable_let_patterns)] if let Self :: CharDirective (x) = self { Some (x) } else { None } } # [doc = "Returns the node if it is of type `commodity_directive` ([`CommodityDirective`]), otherwise returns `None`"] # [inline] pub fn as_commodity_directive (self) -> :: std :: option :: Option < CommodityDirective < 'tree > > { # [allow (irrefutable_let_patterns)] if let Self :: CommodityDirective (x) = self { Some (x) } else { None } } # [doc = "Returns the node if it is of type `option` ([`Option`]), otherwise returns `None`"] # [inline] pub fn as_option (self) -> :: std :: option :: Option < Option < 'tree > > { # [allow (irrefutable_let_patterns)] if let Self :: Option (x) = self { Some (x) } else { None } } # [doc = "Returns the node if it is of type `payee_directive` ([`PayeeDirective`]), otherwise returns `None`"] # [inline] pub fn as_payee_directive (self) -> :: std :: option :: Option < PayeeDirective < 'tree > > { # [allow (irrefutable_let_patterns)] if let Self :: PayeeDirective (x) = self { Some (x) } else { None } } # [doc = "Returns the node if it is of type `tag_directive` ([`TagDirective`]), otherwise returns `None`"] # [inline] pub fn as_tag_directive (self) -> :: std :: option :: Option < TagDirective < 'tree > > { # [allow (irrefutable_let_patterns)] if let Self :: TagDirective (x) = self { Some (x) } else { None } } # [doc = "Returns the node if it is of type `word_directive` ([`WordDirective`]), otherwise returns `None`"] # [inline] pub fn as_word_directive (self) -> :: std :: option :: Option < WordDirective < 'tree > > { # [allow (irrefutable_let_patterns)] if let Self :: WordDirective (x) = self { Some (x) } else { None } } }
     #[automatically_derived]
-    impl<'tree> ::type_sitter::Node<'tree>
-        for AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective<
-            'tree,
-        >
-    {
-        type WithLifetime<'a> =
-            AccountDirective_CharDirective_CommodityDirective_Option_TagDirective_WordDirective<'a>;
-        const KIND : & 'static str = "{account_directive | char_directive | commodity_directive | option | tag_directive | word_directive}" ;
-        #[inline]
-        fn try_from_raw(
-            node: ::type_sitter::raw::Node<'tree>,
-        ) -> ::type_sitter::NodeResult<'tree, Self> {
-            match node.kind() {
-                "account_directive" => Ok(unsafe {
-                    Self::AccountDirective(<AccountDirective<'tree> as ::type_sitter::Node<
-                        'tree,
-                    >>::from_raw_unchecked(node))
-                }),
-                "char_directive" => {
-                    Ok(unsafe {
-                        Self :: CharDirective (< CharDirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node))
-                    })
-                }
-                "commodity_directive" => {
-                    Ok(unsafe {
-                        Self :: CommodityDirective (< CommodityDirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node))
-                    })
-                }
-                "option" => Ok(unsafe {
-                    Self::Option(
-                        <Option<'tree> as ::type_sitter::Node<'tree>>::from_raw_unchecked(node),
-                    )
-                }),
-                "tag_directive" => Ok(unsafe {
-                    Self::TagDirective(
-                        <TagDirective<'tree> as ::type_sitter::Node<'tree>>::from_raw_unchecked(
-                            node,
-                        ),
-                    )
-                }),
-                "word_directive" => {
-                    Ok(unsafe {
-                        Self :: WordDirective (< WordDirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node))
-                    })
-                }
-                _ => Err(::type_sitter::IncorrectKind::new::<Self>(node)),
-            }
-        }
-        #[inline]
-        fn raw(&self) -> &::type_sitter::raw::Node<'tree> {
-            match self {
-                Self::AccountDirective(x) => ::type_sitter::Node::raw(x),
-                Self::CharDirective(x) => ::type_sitter::Node::raw(x),
-                Self::CommodityDirective(x) => ::type_sitter::Node::raw(x),
-                Self::Option(x) => ::type_sitter::Node::raw(x),
-                Self::TagDirective(x) => ::type_sitter::Node::raw(x),
-                Self::WordDirective(x) => ::type_sitter::Node::raw(x),
-            }
-        }
-        #[inline]
-        fn raw_mut(&mut self) -> &mut ::type_sitter::raw::Node<'tree> {
-            match self {
-                Self::AccountDirective(x) => ::type_sitter::Node::raw_mut(x),
-                Self::CharDirective(x) => ::type_sitter::Node::raw_mut(x),
-                Self::CommodityDirective(x) => ::type_sitter::Node::raw_mut(x),
-                Self::Option(x) => ::type_sitter::Node::raw_mut(x),
-                Self::TagDirective(x) => ::type_sitter::Node::raw_mut(x),
-                Self::WordDirective(x) => ::type_sitter::Node::raw_mut(x),
-            }
-        }
-        #[inline]
-        fn into_raw(self) -> ::type_sitter::raw::Node<'tree> {
-            match self {
-                Self::AccountDirective(x) => x.into_raw(),
-                Self::CharDirective(x) => x.into_raw(),
-                Self::CommodityDirective(x) => x.into_raw(),
-                Self::Option(x) => x.into_raw(),
-                Self::TagDirective(x) => x.into_raw(),
-                Self::WordDirective(x) => x.into_raw(),
-            }
-        }
-    }
+    impl < 'tree > :: type_sitter :: Node < 'tree > for AccountDirective_CharDirective_CommodityDirective_Option_PayeeDirective_TagDirective_WordDirective < 'tree > { type WithLifetime < 'a > = AccountDirective_CharDirective_CommodityDirective_Option_PayeeDirective_TagDirective_WordDirective < 'a > ; const KIND : & 'static str = "{account_directive | char_directive | commodity_directive | option | payee_directive | tag_directive | word_directive}" ; # [inline] fn try_from_raw (node : :: type_sitter :: raw :: Node < 'tree >) -> :: type_sitter :: NodeResult < 'tree , Self > { match node . kind () { "account_directive" => Ok (unsafe { Self :: AccountDirective (< AccountDirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "char_directive" => Ok (unsafe { Self :: CharDirective (< CharDirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "commodity_directive" => Ok (unsafe { Self :: CommodityDirective (< CommodityDirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "option" => Ok (unsafe { Self :: Option (< Option < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "payee_directive" => Ok (unsafe { Self :: PayeeDirective (< PayeeDirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "tag_directive" => Ok (unsafe { Self :: TagDirective (< TagDirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , "word_directive" => Ok (unsafe { Self :: WordDirective (< WordDirective < 'tree > as :: type_sitter :: Node < 'tree >> :: from_raw_unchecked (node)) }) , _ => Err (:: type_sitter :: IncorrectKind :: new :: < Self > (node)) } } # [inline] fn raw (& self) -> & :: type_sitter :: raw :: Node < 'tree > { match self { Self :: AccountDirective (x) => :: type_sitter :: Node :: raw (x) , Self :: CharDirective (x) => :: type_sitter :: Node :: raw (x) , Self :: CommodityDirective (x) => :: type_sitter :: Node :: raw (x) , Self :: Option (x) => :: type_sitter :: Node :: raw (x) , Self :: PayeeDirective (x) => :: type_sitter :: Node :: raw (x) , Self :: TagDirective (x) => :: type_sitter :: Node :: raw (x) , Self :: WordDirective (x) => :: type_sitter :: Node :: raw (x) , } } # [inline] fn raw_mut (& mut self) -> & mut :: type_sitter :: raw :: Node < 'tree > { match self { Self :: AccountDirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: CharDirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: CommodityDirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: Option (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: PayeeDirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: TagDirective (x) => :: type_sitter :: Node :: raw_mut (x) , Self :: WordDirective (x) => :: type_sitter :: Node :: raw_mut (x) , } } # [inline] fn into_raw (self) -> :: type_sitter :: raw :: Node < 'tree > { match self { Self :: AccountDirective (x) => x . into_raw () , Self :: CharDirective (x) => x . into_raw () , Self :: CommodityDirective (x) => x . into_raw () , Self :: Option (x) => x . into_raw () , Self :: PayeeDirective (x) => x . into_raw () , Self :: TagDirective (x) => x . into_raw () , Self :: WordDirective (x) => x . into_raw () , } } }
     #[doc = "One of `{account | account_subdirective | comment}`:\n- [`Account`]\n- [`AccountSubdirective`]\n- [`Comment`]"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     #[allow(non_camel_case_types)]
@@ -4849,7 +4846,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `comment` ([`Comment`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_comment_(self) -> ::std::option::Option<Comment<'tree>> {
+        pub fn as_comment(self) -> ::std::option::Option<Comment<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Comment(x) = self {
                 Some(x)
@@ -5644,7 +5641,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `comment` ([`Comment`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_comment_(self) -> ::std::option::Option<Comment<'tree>> {
+        pub fn as_comment(self) -> ::std::option::Option<Comment<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Comment(x) = self {
                 Some(x)
@@ -5826,7 +5823,7 @@ pub mod anon_unions {
         }
         #[doc = "Returns the node if it is of type `comment` ([`Comment`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_comment_(self) -> ::std::option::Option<Comment<'tree>> {
+        pub fn as_comment(self) -> ::std::option::Option<Comment<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Comment(x) = self {
                 Some(x)
@@ -6121,7 +6118,7 @@ pub mod anon_unions {
     impl<'tree> Comment_Commodity_CommoditySubdirective<'tree> {
         #[doc = "Returns the node if it is of type `comment` ([`Comment`]), otherwise returns `None`"]
         #[inline]
-        pub fn as_comment_(self) -> ::std::option::Option<Comment<'tree>> {
+        pub fn as_comment(self) -> ::std::option::Option<Comment<'tree>> {
             #[allow(irrefutable_let_patterns)]
             if let Self::Comment(x) = self {
                 Some(x)
@@ -6199,6 +6196,100 @@ pub mod anon_unions {
                 Self::Comment(x) => x.into_raw(),
                 Self::Commodity(x) => x.into_raw(),
                 Self::CommoditySubdirective(x) => x.into_raw(),
+            }
+        }
+    }
+    #[doc = "One of `{comment | payee | payee_subdirective}`:\n- [`Comment`]\n- [`Payee`]\n- [`PayeeSubdirective`]"]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[allow(non_camel_case_types)]
+    pub enum Comment_Payee_PayeeSubdirective<'tree> {
+        Comment(Comment<'tree>),
+        Payee(Payee<'tree>),
+        PayeeSubdirective(PayeeSubdirective<'tree>),
+    }
+    #[automatically_derived]
+    #[allow(unused)]
+    impl<'tree> Comment_Payee_PayeeSubdirective<'tree> {
+        #[doc = "Returns the node if it is of type `comment` ([`Comment`]), otherwise returns `None`"]
+        #[inline]
+        pub fn as_comment(self) -> ::std::option::Option<Comment<'tree>> {
+            #[allow(irrefutable_let_patterns)]
+            if let Self::Comment(x) = self {
+                Some(x)
+            } else {
+                None
+            }
+        }
+        #[doc = "Returns the node if it is of type `payee` ([`Payee`]), otherwise returns `None`"]
+        #[inline]
+        pub fn as_payee_(self) -> ::std::option::Option<Payee<'tree>> {
+            #[allow(irrefutable_let_patterns)]
+            if let Self::Payee(x) = self {
+                Some(x)
+            } else {
+                None
+            }
+        }
+        #[doc = "Returns the node if it is of type `payee_subdirective` ([`PayeeSubdirective`]), otherwise returns `None`"]
+        #[inline]
+        pub fn as_payee_subdirective(self) -> ::std::option::Option<PayeeSubdirective<'tree>> {
+            #[allow(irrefutable_let_patterns)]
+            if let Self::PayeeSubdirective(x) = self {
+                Some(x)
+            } else {
+                None
+            }
+        }
+    }
+    #[automatically_derived]
+    impl<'tree> ::type_sitter::Node<'tree> for Comment_Payee_PayeeSubdirective<'tree> {
+        type WithLifetime<'a> = Comment_Payee_PayeeSubdirective<'a>;
+        const KIND: &'static str = "{comment | payee | payee_subdirective}";
+        #[inline]
+        fn try_from_raw(
+            node: ::type_sitter::raw::Node<'tree>,
+        ) -> ::type_sitter::NodeResult<'tree, Self> {
+            match node.kind() {
+                "comment" => Ok(unsafe {
+                    Self::Comment(
+                        <Comment<'tree> as ::type_sitter::Node<'tree>>::from_raw_unchecked(node),
+                    )
+                }),
+                "payee" => Ok(unsafe {
+                    Self::Payee(
+                        <Payee<'tree> as ::type_sitter::Node<'tree>>::from_raw_unchecked(node),
+                    )
+                }),
+                "payee_subdirective" => Ok(unsafe {
+                    Self::PayeeSubdirective(<PayeeSubdirective<'tree> as ::type_sitter::Node<
+                        'tree,
+                    >>::from_raw_unchecked(node))
+                }),
+                _ => Err(::type_sitter::IncorrectKind::new::<Self>(node)),
+            }
+        }
+        #[inline]
+        fn raw(&self) -> &::type_sitter::raw::Node<'tree> {
+            match self {
+                Self::Comment(x) => ::type_sitter::Node::raw(x),
+                Self::Payee(x) => ::type_sitter::Node::raw(x),
+                Self::PayeeSubdirective(x) => ::type_sitter::Node::raw(x),
+            }
+        }
+        #[inline]
+        fn raw_mut(&mut self) -> &mut ::type_sitter::raw::Node<'tree> {
+            match self {
+                Self::Comment(x) => ::type_sitter::Node::raw_mut(x),
+                Self::Payee(x) => ::type_sitter::Node::raw_mut(x),
+                Self::PayeeSubdirective(x) => ::type_sitter::Node::raw_mut(x),
+            }
+        }
+        #[inline]
+        fn into_raw(self) -> ::type_sitter::raw::Node<'tree> {
+            match self {
+                Self::Comment(x) => x.into_raw(),
+                Self::Payee(x) => x.into_raw(),
+                Self::PayeeSubdirective(x) => x.into_raw(),
             }
         }
     }
