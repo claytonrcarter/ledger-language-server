@@ -1,4 +1,7 @@
-use crate::backend::{CompletionResult, LedgerBackend, LedgerCompletion, TransactionStatus};
+use crate::backend::{
+    LedgerBackend, LedgerCompletion, LedgerLocation, LedgerRange, LocationBasedResult,
+    TransactionStatus,
+};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -161,6 +164,7 @@ impl LanguageServer for Lsp {
                 //     commands: vec!["dummy.do_something".to_string()],
                 //     work_done_progress_options: Default::default(),
                 // }),
+                references_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
@@ -452,8 +456,8 @@ impl LanguageServer for Lsp {
             &params.text_document_position.position,
             &mut visited,
         ) {
-            Ok(CompletionResult::Some { range, completions }) => (range, completions),
-            Ok(CompletionResult::None) => {
+            Ok(LocationBasedResult::Some { range, results }) => (range, results),
+            Ok(LocationBasedResult::None) => {
                 log_debug!(
                     self,
                     INFO,
@@ -462,7 +466,7 @@ impl LanguageServer for Lsp {
                 );
                 return Ok(None);
             }
-            Ok(CompletionResult::NoNode(_report)) => {
+            Ok(LocationBasedResult::NoNode(_report)) => {
                 log_debug!(self, INFO, "[completion] {_report}");
                 return Ok(None);
             }
@@ -656,6 +660,133 @@ impl LanguageServer for Lsp {
             target_range: Range::default(),
             target_selection_range: Range::default(),
         }])))
+    }
+
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        log_debug!(self, "[references] {params:?}");
+        let start_time = std::time::Instant::now();
+
+        let mut state = self.state.lock().await;
+        log_debug!(
+            self,
+            "[references] acquired lock @ {:?}",
+            start_time.elapsed()
+        );
+        let buffer_path = params.text_document_position.text_document.uri.path();
+        let contents = match state.sources.get(buffer_path) {
+            Some(contents) => contents.clone(),
+            None => return Ok(None),
+        };
+
+        let mut visited = HashSet::new();
+        let (_range, locations) = match state.backend.references_for_position(
+            buffer_path,
+            &contents,
+            &params.text_document_position.position,
+            params.context.include_declaration,
+            &mut visited,
+        ) {
+            Ok(LocationBasedResult::Some { range, results }) => (range, results),
+            Ok(LocationBasedResult::None) => {
+                log_debug!(
+                    self,
+                    INFO,
+                    "[references] no references for {:?}",
+                    &params.text_document_position.position
+                );
+                return Ok(None);
+            }
+            Ok(LocationBasedResult::NoNode(_report)) => {
+                log_debug!(self, INFO, "[references] {_report}");
+                return Ok(None);
+            }
+            Err(err) => {
+                log!(self, ERROR, "[references] {err}");
+                return Ok(None);
+            }
+        };
+
+        enum UrlError {
+            /// Current buffer_path has no parent.
+            NoParent,
+
+            /// Could not canonicalize the given path.
+            CouldNotCanonicalize(std::io::Error),
+
+            /// Could not build a URL for the given path.
+            UnableToBuild,
+        }
+        let mut path_urls: HashMap<String, Url> = HashMap::new();
+        let mut url_for_path = |file: &str| match path_urls.get(file) {
+            Some(url) => Ok(url.clone()),
+            None => {
+                let url = {
+                    let path = Path::new(&file);
+                    let path = if path.is_absolute() {
+                        path.to_path_buf()
+                    } else {
+                        let dir = match Path::new(buffer_path).parent() {
+                            Some(dir) => dir,
+                            None => {
+                                return Err(UrlError::NoParent);
+                            }
+                        };
+                        let path = dir.join(path);
+                        match path.canonicalize() {
+                            Ok(path) => path,
+                            Err(err) => {
+                                return Err(UrlError::CouldNotCanonicalize(err));
+                            }
+                        }
+                    };
+
+                    match Url::from_file_path(&path) {
+                        Ok(url) => url,
+                        Err(()) => {
+                            return Err(UrlError::UnableToBuild);
+                        }
+                    }
+                };
+
+                path_urls.insert(file.to_string(), url.clone());
+
+                Ok(url)
+            }
+        };
+
+        let mut results = Vec::new();
+        for location in locations {
+            let LedgerLocation {
+                file,
+                range: LedgerRange(range),
+            } = location;
+
+            match url_for_path(&file) {
+                Ok(uri) => results.push(Location { uri, range }),
+                Err(UrlError::NoParent) => {
+                    log!(
+                        self,
+                        ERROR,
+                        "[references] Buffer has no parent dir? {buffer_path}"
+                    );
+                }
+                Err(UrlError::CouldNotCanonicalize(err)) => {
+                    log!(self, ERROR, "[references] Could not canonicalize {file}",);
+                    log!(self, ERROR, "[references] {err}");
+                }
+                Err(UrlError::UnableToBuild) => {
+                    log!(self, ERROR, "[references] Unable to build url for {file}",);
+                }
+            };
+        }
+
+        log!(
+            self,
+            "[references:response] {} references @ {:?}",
+            results.len(),
+            start_time.elapsed()
+        );
+        Ok(Some(results))
     }
 }
 
@@ -1335,6 +1466,180 @@ mod test {
         Ok(())
     }
 
+    #[test_log::test(tokio::test)]
+    async fn references() -> anyhow::Result<()> {
+        let mut context = TestContext::new().await?;
+        context.initialize().await?;
+
+        let source = textwrap::dedent(
+            "
+            account Account1
+            account Account2
+
+            2024/01/02 Payee1
+                Account1  $1
+                Account3
+
+            2024/02/03 Payee2
+                Account2  $1
+                Account3
+
+            2024/01/04 Payee1
+                Account1  $1
+                Account3
+            ",
+        );
+        context.prep_document(&source).await?;
+
+        {
+            // references for Payee1, on line 4
+            let mut references: Vec<Range> = context
+                .reference(4, 12, false)
+                .await?
+                .unwrap()
+                .into_iter()
+                .map(|l| l.range)
+                .collect();
+            references.sort_by(|a, b| a.start.line.cmp(&b.start.line));
+
+            insta::assert_debug_snapshot!(references,
+                @r#"
+            [
+                Range {
+                    start: Position {
+                        line: 4,
+                        character: 11,
+                    },
+                    end: Position {
+                        line: 4,
+                        character: 17,
+                    },
+                },
+                Range {
+                    start: Position {
+                        line: 12,
+                        character: 11,
+                    },
+                    end: Position {
+                        line: 12,
+                        character: 17,
+                    },
+                },
+            ]
+            "#
+            );
+        }
+
+        {
+            // references for Account2, on line 9; including decl
+            let mut references: Vec<Range> = context
+                .reference(9, 7, true)
+                .await?
+                .unwrap()
+                .into_iter()
+                .map(|l| l.range)
+                .collect();
+            references.sort_by(|a, b| a.start.line.cmp(&b.start.line));
+
+            insta::assert_debug_snapshot!(references,
+                @r#"
+            [
+                Range {
+                    start: Position {
+                        line: 2,
+                        character: 8,
+                    },
+                    end: Position {
+                        line: 2,
+                        character: 16,
+                    },
+                },
+                Range {
+                    start: Position {
+                        line: 9,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 9,
+                        character: 12,
+                    },
+                },
+            ]
+            "#
+            );
+        }
+
+        {
+            // references for Account2, on line 9; EXCLUDING decl
+            let mut references: Vec<Range> = context
+                .reference(9, 7, false)
+                .await?
+                .unwrap()
+                .into_iter()
+                .map(|l| l.range)
+                .collect();
+            references.sort_by(|a, b| a.start.line.cmp(&b.start.line));
+
+            insta::assert_debug_snapshot!(references,
+                @r#"
+            [
+                Range {
+                    start: Position {
+                        line: 9,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 9,
+                        character: 12,
+                    },
+                },
+            ]
+            "#
+            );
+        }
+
+        {
+            // references for Account1, on line 13, excluding decl
+            let mut references: Vec<Range> = context
+                .reference(13, 8, false)
+                .await?
+                .unwrap()
+                .into_iter()
+                .map(|l| l.range)
+                .collect();
+            references.sort_by(|a, b| a.start.line.cmp(&b.start.line));
+
+            insta::assert_debug_snapshot!(references,
+                @r#"
+            [
+                Range {
+                    start: Position {
+                        line: 5,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 12,
+                    },
+                },
+                Range {
+                    start: Position {
+                        line: 13,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 13,
+                        character: 12,
+                    },
+                },
+            ]
+            "#
+            );
+        }
+
+        Ok(())
+    }
+
     struct TestContext {
         pub request_tx: UnboundedSender<String>,
         pub response_rx: UnboundedReceiver<String>,
@@ -1400,24 +1705,22 @@ mod test {
 
                 tracing::debug!("recv: {payload}");
 
-                // skip log messages
-                if payload.contains("window/logMessage") {
-                    continue;
-                }
-
-                // try parsing as a notification
-                let response = serde_json::from_str::<jsonrpc::Request>(payload)?;
-                match response.into_parts() {
-                    (_method, _id, Some(params)) => return Ok(serde_json::from_value(params)?),
-                    _ => {
-                        tracing::debug!("could not parse repsonse as notification");
+                // We can receive both responses *to our requests* as well as
+                // requests initiated by the server. We only care about the
+                // former (which will successfully parse as a
+                // `jsonrpc::Response`), so we discard everything else,
+                // including `window/logMessage` and
+                // `textDocument/publishDiagnostics`.
+                match serde_json::from_str::<jsonrpc::Response>(payload) {
+                    Ok(response) => {
+                        let (_id, result) = response.into_parts();
+                        return Ok(serde_json::from_value(result?)?);
                     }
-                };
-
-                // try parsing as a result response
-                let response = serde_json::from_str::<jsonrpc::Response>(payload)?;
-                let (_id, result) = response.into_parts();
-                return Ok(serde_json::from_value(result?)?);
+                    Err(_) => {
+                        tracing::debug!("skipping non-response message");
+                        continue;
+                    }
+                }
             }
         }
 
@@ -1498,6 +1801,28 @@ mod test {
                 .finish();
 
             self.request::<Option<CompletionResponse>>(&request).await
+        }
+
+        pub async fn reference(
+            &mut self,
+            line: u8,
+            col: u8,
+            include_declaration: bool,
+        ) -> anyhow::Result<Option<Vec<Location>>> {
+            let request = jsonrpc::Request::build("textDocument/references")
+                .id(3)
+                .params(serde_json::json!({
+                    "textDocument": {
+                        "uri": "file:///foo.ledger",
+                    },
+                    "position": { "line": line, "character": col },
+                    "context": {
+                        "includeDeclaration": include_declaration,
+                    }
+                }))
+                .finish();
+
+            self.request::<Option<Vec<Location>>>(&request).await
         }
     }
 
