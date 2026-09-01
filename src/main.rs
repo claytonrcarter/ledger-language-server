@@ -13,6 +13,8 @@ mod lsp;
 
 #[tokio::main]
 async fn main() {
+    let _ = env_logger::builder().try_init();
+
     match (
         env::args().nth(1),
         env::args().nth(2),
