@@ -1,11 +1,12 @@
 use anyhow::{anyhow, bail, Result};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use std::path::Path;
 use std::sync::LazyLock;
 use tower_lsp::lsp_types::Range as LspRange;
 use tower_lsp::lsp_types::*;
-use tree_sitter::{Language, Node, Parser, Point, Tree};
+use tree_sitter::{Language, Node, Parser, Point, Range, Tree};
 use type_sitter::StreamingIterator;
 use walkdir::WalkDir;
 
@@ -67,13 +68,38 @@ fn lsp_range_from_ts_range(range: tree_sitter::Range) -> LspRange {
 }
 
 #[derive(Debug)]
-pub enum CompletionResult {
+pub enum LocationBasedResult<T> {
+    /// Results were found for the node at this location.
     Some {
+        /// Document range of the matching node.
         range: LspRange,
-        completions: Vec<LedgerCompletion>,
+        /// Results for the matching node.
+        results: Vec<T>,
     },
+
+    /// No results were found for the node at this location.
     None,
+
+    /// There is no node at this location.
     NoNode(String),
+}
+
+#[derive(Debug, Eq, Hash, PartialEq)]
+pub struct LedgerLocation {
+    pub file: String,
+    pub range: LedgerRange,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct LedgerRange(pub LspRange);
+
+impl Hash for LedgerRange {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.start.character.hash(state);
+        self.0.start.line.hash(state);
+        self.0.end.character.hash(state);
+        self.0.end.line.hash(state);
+    }
 }
 
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -103,6 +129,7 @@ pub enum TransactionStatus {
     Cleared(LspRange),
 }
 
+#[derive(Clone)]
 pub struct LedgerBackend {
     _test_included_content: Option<String>,
     _test_project_files: Option<Vec<String>>,
@@ -257,13 +284,13 @@ impl LedgerBackend {
         content: &str,
         position: &Position,
         visited: &mut HashSet<String>,
-    ) -> Result<CompletionResult> {
-        let mut completions = HashSet::new();
+    ) -> Result<LocationBasedResult<LedgerCompletion>> {
+        let mut completions: HashSet<LedgerCompletion> = HashSet::new();
 
         let node = match self.node_at_position(content, position) {
             Some(node) => node,
             None => {
-                return Ok(CompletionResult::NoNode(format!(
+                return Ok(LocationBasedResult::NoNode(format!(
                     "No node found at position {position:?}"
                 )));
             }
@@ -282,12 +309,12 @@ impl LedgerBackend {
         log::debug!("posn: {}^", " ".repeat(position.character as usize));
 
         match node.kind() {
-            "account" => self.populate_completions(
+            "account" => self.filter_nodes(
                 &mut completions,
                 buffer_path,
                 "(account) @account",
                 content,
-                &|account| {
+                &|account, _, _| {
                     if account != current_node_content {
                         Some(LedgerCompletion::Account(account))
                     } else {
@@ -332,12 +359,12 @@ impl LedgerBackend {
                 self.completions_insert_periods(&mut completions)
             }
 
-            "payee" => self.populate_completions(
+            "payee" => self.filter_nodes(
                 &mut completions,
                 buffer_path,
                 "(payee) @payee",
                 content,
-                &|payee| {
+                &|payee, _, _| {
                     if payee != current_node_content {
                         Some(LedgerCompletion::Payee(payee))
                     } else {
@@ -356,12 +383,12 @@ impl LedgerBackend {
                 range.end_point.row = range.start_point.row;
                 range.end_point.column = end;
 
-                self.populate_completions(
+                self.filter_nodes(
                     &mut completions,
                     buffer_path,
                     "(note) @note",
                     content,
-                    &|note| {
+                    &|note, _, _| {
                         if note == current_node_content {
                             // don't include current node content
                             return Vec::new();
@@ -419,7 +446,7 @@ impl LedgerBackend {
                 self.completions_insert_directives(&mut completions)
             }
 
-            _ => return Ok(CompletionResult::None),
+            _ => return Ok(LocationBasedResult::None),
         };
 
         // remove trailing newline from range to replace
@@ -429,7 +456,7 @@ impl LedgerBackend {
             range.end_point.column = content.lines().nth(range.end_point.row).unwrap_or("").len();
         }
 
-        Ok(CompletionResult::Some {
+        Ok(LocationBasedResult::Some {
             range: LspRange {
                 start: Position {
                     line: range.start_point.row as u32,
@@ -440,22 +467,23 @@ impl LedgerBackend {
                     character: range.end_point.column as u32,
                 },
             },
-            completions: completions.into_iter().collect(),
+            results: completions.into_iter().collect(),
         })
     }
 
-    pub fn populate_completions<F, I>(
+    pub fn filter_nodes<F, I, T>(
         &mut self,
-        completions: &mut HashSet<LedgerCompletion>,
+        results: &mut HashSet<T>,
         buffer_path: &str,
         query: &str,
         content: &str,
-        completion_fn: &F,
+        filter_fn: &F,
         visited: &mut HashSet<String>,
     ) -> Result<()>
     where
-        F: Fn(String) -> I,
-        I: IntoIterator<Item = LedgerCompletion>,
+        F: Fn(String, &str, Range) -> I,
+        I: IntoIterator<Item = T>,
+        T: Hash + Eq,
     {
         let current_dir = match Path::new(buffer_path).parent() {
             Some(dir) => dir,
@@ -493,7 +521,7 @@ impl LedgerBackend {
             // query as passed in
             for n in m.nodes_for_capture_index(0) {
                 let capture_text = substring(source, n.start_byte(), n.end_byte())?;
-                completions.extend(completion_fn(capture_text));
+                results.extend(filter_fn(capture_text, buffer_path, n.range()));
             }
 
             // (filename) @filename
@@ -525,12 +553,12 @@ impl LedgerBackend {
 
                 self.parse_document(&included_content);
 
-                self.populate_completions(
-                    completions,
+                self.filter_nodes(
+                    results,
                     filename,
                     query,
                     &included_content,
-                    completion_fn,
+                    filter_fn,
                     visited,
                 )?;
             }
@@ -710,6 +738,87 @@ impl LedgerBackend {
     pub fn format(content: &str, sort_transactions: bool) -> Result<String, String> {
         backend_format::format(content, sort_transactions)
             .map_err(|_err| "TODO convert io::Error to ???".to_string())
+    }
+
+    pub fn references_for_position(
+        &mut self,
+        buffer_path: &str,
+        content: &str,
+        position: &Position,
+        include_declaration: bool,
+        visited: &mut HashSet<String>,
+    ) -> Result<LocationBasedResult<LedgerLocation>> {
+        let mut locations: HashSet<LedgerLocation> = HashSet::new();
+
+        let node = match self.node_at_position(content, position) {
+            Some(node) => node,
+            None => {
+                return Ok(LocationBasedResult::NoNode(format!(
+                    "No node found at position {position:?}"
+                )));
+            }
+        };
+        let current_node_content = substring(
+            content.as_bytes(),
+            node.range().start_byte,
+            node.range().end_byte,
+        )?;
+        let range = node.range();
+
+        let line_content = content.lines().nth(position.line as usize).unwrap_or("");
+
+        log::debug!("{:?} Node: {} {:?}", position, node.kind(), node.range());
+        log::debug!("line: {line_content:?}");
+        log::debug!("posn: {}^", " ".repeat(position.character as usize));
+
+        let query = match node.kind() {
+            // Accounts mostly show up in postings and `account`/`A` directives
+            // (declarations), but can also be used in `bucket` directives and
+            // timeclock journals.
+            //
+            // This matches all accounts when including decls, or only accounts
+            // within postings if excluding. This is a simple and effective
+            // approach, but it comes at the cost of not really supporting
+            // bucket/timeclock.
+            "account" if include_declaration => "(account) @account",
+            "account" => "(posting (account) @account)",
+
+            "payee" => "(payee) @payee",
+            _ => return Ok(LocationBasedResult::None),
+        };
+
+        self.filter_nodes(
+            &mut locations,
+            buffer_path,
+            query,
+            content,
+            &|node_content, buffer_path, range| {
+                if node_content == current_node_content {
+                    Some(LedgerLocation {
+                        file: buffer_path.to_string(),
+                        range: LedgerRange(lsp_range_from_ts_range(range)),
+                    })
+                } else {
+                    // don't include current node content
+                    None
+                }
+            },
+            visited,
+        )?;
+
+        Ok(LocationBasedResult::Some {
+            range: LspRange {
+                start: Position {
+                    line: range.start_point.row as u32,
+                    character: range.start_point.column as u32,
+                },
+                end: Position {
+                    line: range.end_point.row as u32,
+                    character: range.end_point.column as u32,
+                },
+            },
+            results: locations.into_iter().collect(),
+        })
     }
 
     /// Get the smallest named node at the given position.
@@ -1729,6 +1838,546 @@ mod test {
     }
 
     #[test]
+    fn test_references_payees() {
+        let source = textwrap::dedent(
+            "
+            2024/01/02 Payee1
+                Account1
+
+            2024/02/03 Payee2
+                Account2
+
+            2024/02/03 Payee1
+                Account1
+            ",
+        );
+
+        let completions = get_references(
+            &source,
+            &Position {
+                line: 1,
+                character: 12,
+            },
+            true,
+            None,
+        );
+
+        insta::assert_debug_snapshot!(completions,
+        @r###"
+        (
+            Range {
+                start: Position {
+                    line: 1,
+                    character: 11,
+                },
+                end: Position {
+                    line: 1,
+                    character: 17,
+                },
+            },
+            [
+                LedgerLocation {
+                    file: "unused in test",
+                    range: LedgerRange(
+                        Range {
+                            start: Position {
+                                line: 1,
+                                character: 11,
+                            },
+                            end: Position {
+                                line: 1,
+                                character: 17,
+                            },
+                        },
+                    ),
+                },
+                LedgerLocation {
+                    file: "unused in test",
+                    range: LedgerRange(
+                        Range {
+                            start: Position {
+                                line: 7,
+                                character: 11,
+                            },
+                            end: Position {
+                                line: 7,
+                                character: 17,
+                            },
+                        },
+                    ),
+                },
+            ],
+        )
+        "###
+        );
+    }
+
+    #[test]
+    fn test_references_accounts() {
+        let source = textwrap::dedent(
+            "
+            account Account1
+
+            2024/01/02 Payee1
+                Account1
+
+            2024/02/03 Payee2
+                Account2
+
+            2024/02/03 Payee1
+                Account1
+            ",
+        );
+
+        {
+            // references for Account1 WITH declaration
+            let completions = get_references(
+                &source,
+                &Position {
+                    line: 4,
+                    character: 5,
+                },
+                true,
+                None,
+            );
+
+            insta::assert_debug_snapshot!(completions,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 4,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 4,
+                        character: 12,
+                    },
+                },
+                [
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 1,
+                                    character: 8,
+                                },
+                                end: Position {
+                                    line: 1,
+                                    character: 16,
+                                },
+                            },
+                        ),
+                    },
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 4,
+                                    character: 4,
+                                },
+                                end: Position {
+                                    line: 4,
+                                    character: 12,
+                                },
+                            },
+                        ),
+                    },
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 10,
+                                    character: 4,
+                                },
+                                end: Position {
+                                    line: 10,
+                                    character: 12,
+                                },
+                            },
+                        ),
+                    },
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // references for Account1 WITHOUT declaration
+            let completions = get_references(
+                &source,
+                &Position {
+                    line: 4,
+                    character: 5,
+                },
+                false,
+                None,
+            );
+
+            insta::assert_debug_snapshot!(completions,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 4,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 4,
+                        character: 12,
+                    },
+                },
+                [
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 4,
+                                    character: 4,
+                                },
+                                end: Position {
+                                    line: 4,
+                                    character: 12,
+                                },
+                            },
+                        ),
+                    },
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 10,
+                                    character: 4,
+                                },
+                                end: Position {
+                                    line: 10,
+                                    character: 12,
+                                },
+                            },
+                        ),
+                    },
+                ],
+            )
+            "###
+            );
+        }
+    }
+
+    #[test]
+    fn test_references_from_included_files() {
+        let included = textwrap::dedent(
+            "
+            2024/01/02 Payee1
+                Account1
+            ",
+        );
+        let source = textwrap::dedent(
+            "
+            include foo.ledger
+
+            2024/01/02 Payee1
+                Account1
+
+            2024/02/03 Payee2
+                Account2
+
+            2024/02/03 Payee1
+                Account1
+            ",
+        );
+
+        let be = {
+            let mut be = LedgerBackend::new();
+            be._test_included_content = Some(included.clone());
+            be._test_project_files = Some(vec![]);
+            be.parse_document(&source);
+            be.parse_document(&included);
+            be
+        };
+
+        {
+            // references for Account1, in first transaction
+            let completions = get_references(
+                &source,
+                &Position {
+                    line: 4,
+                    character: 5,
+                },
+                true,
+                Some(be.clone()),
+            );
+
+            insta::assert_debug_snapshot!(completions,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 4,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 4,
+                        character: 12,
+                    },
+                },
+                [
+                    LedgerLocation {
+                        file: "foo.ledger",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 2,
+                                    character: 4,
+                                },
+                                end: Position {
+                                    line: 2,
+                                    character: 12,
+                                },
+                            },
+                        ),
+                    },
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 4,
+                                    character: 4,
+                                },
+                                end: Position {
+                                    line: 4,
+                                    character: 12,
+                                },
+                            },
+                        ),
+                    },
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 10,
+                                    character: 4,
+                                },
+                                end: Position {
+                                    line: 10,
+                                    character: 12,
+                                },
+                            },
+                        ),
+                    },
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // references for Payee1, in third transaction
+            let completions = get_references(
+                &source,
+                &Position {
+                    line: 9,
+                    character: 15,
+                },
+                true,
+                Some(be),
+            );
+
+            insta::assert_debug_snapshot!(completions,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 9,
+                        character: 11,
+                    },
+                    end: Position {
+                        line: 9,
+                        character: 17,
+                    },
+                },
+                [
+                    LedgerLocation {
+                        file: "foo.ledger",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 1,
+                                    character: 11,
+                                },
+                                end: Position {
+                                    line: 1,
+                                    character: 17,
+                                },
+                            },
+                        ),
+                    },
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 3,
+                                    character: 11,
+                                },
+                                end: Position {
+                                    line: 3,
+                                    character: 17,
+                                },
+                            },
+                        ),
+                    },
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 9,
+                                    character: 11,
+                                },
+                                end: Position {
+                                    line: 9,
+                                    character: 17,
+                                },
+                            },
+                        ),
+                    },
+                ],
+            )
+            "###
+            );
+        }
+    }
+
+    #[test]
+    fn test_references_include_declaration() {
+        let source = textwrap::dedent(
+            "
+            account Account1
+
+            2024/01/02 Payee1
+                Account1
+            ",
+        );
+
+        {
+            // refs for Account1 WITH declaration
+            let completions = get_references(
+                &source,
+                &Position {
+                    line: 4,
+                    character: 5,
+                },
+                true,
+                None,
+            );
+
+            insta::assert_debug_snapshot!(completions,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 4,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 4,
+                        character: 12,
+                    },
+                },
+                [
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 1,
+                                    character: 8,
+                                },
+                                end: Position {
+                                    line: 1,
+                                    character: 16,
+                                },
+                            },
+                        ),
+                    },
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 4,
+                                    character: 4,
+                                },
+                                end: Position {
+                                    line: 4,
+                                    character: 12,
+                                },
+                            },
+                        ),
+                    },
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // refs for Account1 WITHOUT declaration
+            let completions = get_references(
+                &source,
+                &Position {
+                    line: 4,
+                    character: 5,
+                },
+                false,
+                None,
+            );
+
+            insta::assert_debug_snapshot!(completions,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 4,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 4,
+                        character: 12,
+                    },
+                },
+                [
+                    LedgerLocation {
+                        file: "unused in test",
+                        range: LedgerRange(
+                            Range {
+                                start: Position {
+                                    line: 4,
+                                    character: 4,
+                                },
+                                end: Position {
+                                    line: 4,
+                                    character: 12,
+                                },
+                            },
+                        ),
+                    },
+                ],
+            )
+            "###
+            );
+        }
+    }
+
+    #[test]
     fn test_formatting() {
         let source = textwrap::dedent(
             "
@@ -2199,12 +2848,41 @@ mod test {
 
         let mut visited = HashSet::new();
         match backend.completions_for_position("unused in test", &source, &position, &mut visited) {
-            Ok(CompletionResult::Some {
+            Ok(LocationBasedResult::Some {
                 range,
-                mut completions,
+                results: mut completions,
             }) => {
                 completions.sort();
                 (range, completions)
+            }
+            _ => panic!(),
+        }
+    }
+
+    fn get_references(
+        source: &str,
+        position: &Position,
+        include_declaration: bool,
+        backend: Option<LedgerBackend>,
+    ) -> (LspRange, Vec<LedgerLocation>) {
+        let mut backend = backend.unwrap_or_else(|| {
+            let mut be = LedgerBackend::new();
+            be._test_project_files = Some(vec![]);
+            be.parse_document(&source);
+            be
+        });
+
+        let mut visited = HashSet::new();
+        match backend.references_for_position(
+            "unused in test",
+            &source,
+            &position,
+            include_declaration,
+            &mut visited,
+        ) {
+            Ok(LocationBasedResult::Some { range, mut results }) => {
+                results.sort_by_key(|r| r.range.0.start.line);
+                (range, results)
             }
             _ => panic!(),
         }
