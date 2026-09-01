@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 use tower_lsp::lsp_types::Range as LspRange;
 use tower_lsp::lsp_types::*;
-use tree_sitter::{Language, Node, Parser, Point, Range, Tree};
+use tree_sitter::{Language, Node, Parser, Point, QueryMatch, Range, Tree};
 use type_sitter::StreamingIterator;
 use walkdir::WalkDir;
 
@@ -99,6 +99,29 @@ impl Hash for LedgerRange {
         self.0.start.line.hash(state);
         self.0.end.character.hash(state);
         self.0.end.line.hash(state);
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct LedgerHover(pub Hover);
+
+impl Hash for LedgerHover {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        if let HoverContents::Scalar(MarkedString::String(ref s)) = self.0.contents {
+            // we only use HoverContents::Scalar(MarkedString::String())
+            s.hash(state)
+        } else {
+            #[cfg(debug_assertions)]
+            unreachable!(
+                "[unreachable] unexpected HoverContents variant {:?}",
+                self.0.contents
+            );
+            #[cfg(not(debug_assertions))]
+            log::warn!(
+                "[unreachable] unexpected HoverContents variant {:?}",
+                self.0.contents
+            );
+        }
     }
 }
 
@@ -314,7 +337,7 @@ impl LedgerBackend {
                 buffer_path,
                 "(account) @account",
                 content,
-                &|account, _, _| {
+                &|account, _, _, _, _| {
                     if account != current_node_content {
                         Some(LedgerCompletion::Account(account))
                     } else {
@@ -364,7 +387,7 @@ impl LedgerBackend {
                 buffer_path,
                 "(payee) @payee",
                 content,
-                &|payee, _, _| {
+                &|payee, _, _, _, _| {
                     if payee != current_node_content {
                         Some(LedgerCompletion::Payee(payee))
                     } else {
@@ -388,7 +411,7 @@ impl LedgerBackend {
                     buffer_path,
                     "(note) @note",
                     content,
-                    &|note, _, _| {
+                    &|note, _, _, _, _| {
                         if note == current_node_content {
                             // don't include current node content
                             return Vec::new();
@@ -476,12 +499,13 @@ impl LedgerBackend {
         results: &mut HashSet<T>,
         buffer_path: &str,
         query: &str,
-        content: &str,
+        buffer_contents: &str,
         filter_fn: &F,
         visited: &mut HashSet<String>,
     ) -> Result<()>
     where
-        F: Fn(String, &str, Range) -> I,
+        // first cap content, file name, file content, node range, matches
+        F: Fn(String, &str, &str, Range, &QueryMatch) -> I,
         I: IntoIterator<Item = T>,
         T: Hash + Eq,
     {
@@ -495,7 +519,7 @@ impl LedgerBackend {
             }
         };
 
-        let tree = match self.trees_cache.get(content) {
+        let tree = match self.trees_cache.get(buffer_contents) {
             Some(tree) => tree.clone(),
             None => {
                 // self.parse_document(content);
@@ -511,21 +535,27 @@ impl LedgerBackend {
                 Some(ref language) => language,
                 None => bail!("getting tree-sitter language"),
             },
-            format!("{query} (filename) @filename").as_str(),
+            format!("(filename) @filename {query}").as_str(),
         )?;
         let mut cursor = tree_sitter::QueryCursor::new();
 
-        let source = content.as_bytes();
+        let source = buffer_contents.as_bytes();
         let mut matches = cursor.matches(&ts_query, tree.root_node(), source);
         while let Some(m) = matches.next() {
             // query as passed in
-            for n in m.nodes_for_capture_index(0) {
+            for n in m.nodes_for_capture_index(1) {
                 let capture_text = substring(source, n.start_byte(), n.end_byte())?;
-                results.extend(filter_fn(capture_text, buffer_path, n.range()));
+                results.extend(filter_fn(
+                    capture_text,
+                    buffer_path,
+                    buffer_contents,
+                    n.range(),
+                    m,
+                ));
             }
 
             // (filename) @filename
-            for n in m.nodes_for_capture_index(1) {
+            for n in m.nodes_for_capture_index(0) {
                 let filename = substring(source, n.start_byte(), n.end_byte())?;
 
                 let path = Path::new(&filename);
@@ -795,7 +825,7 @@ impl LedgerBackend {
             buffer_path,
             query,
             content,
-            &|node_content, buffer_path, range| {
+            &|node_content, buffer_path, _, range, _| {
                 if node_content == current_node_content {
                     Some(LedgerLocation {
                         file: buffer_path.to_string(),
@@ -821,6 +851,128 @@ impl LedgerBackend {
                 },
             },
             results: locations.into_iter().collect(),
+        })
+    }
+
+    pub fn hovers_for_position(
+        &mut self,
+        buffer_path: &str,
+        content: &str,
+        position: &Position,
+        visited: &mut HashSet<String>,
+    ) -> Result<LocationBasedResult<LedgerHover>> {
+        let mut hovers: HashSet<LedgerHover> = HashSet::new();
+
+        let node = match self.node_at_position(content, position) {
+            Some(node) => node,
+            None => {
+                return Ok(LocationBasedResult::NoNode(format!(
+                    "No node found at position {position:?}"
+                )));
+            }
+        };
+        let current_node_content = substring(
+            content.as_bytes(),
+            node.range().start_byte,
+            node.range().end_byte,
+        )?;
+        let range = node.range();
+
+        let line_content = content.lines().nth(position.line as usize).unwrap_or("");
+
+        log::debug!("{:?} Node: {} {:?}", position, node.kind(), node.range());
+        log::debug!("line: {line_content:?}");
+        log::debug!("posn: {}^", " ".repeat(position.character as usize));
+        log::debug!("current_node_content: {current_node_content}");
+
+        match node.kind() {
+            "account" => self.filter_nodes(
+                &mut hovers,
+                buffer_path,
+                // sibling order is important in tree-sitter queries, so we need
+                // to support notes both before and after aliases; Ledger only
+                // supports 1 note/account, but it supports multiple aliases.
+                "
+                (account_directive
+                    (account) @account
+                    (account_subdirective (alias_subdirective) @alias)*
+                    (account_subdirective (note_subdirective) @note)?
+                    (account_subdirective (alias_subdirective) @alias)*
+                )
+                ",
+                content,
+                &|account, _buffer_path, buffer_contents, _range, matches| {
+                    // capture indices:
+                    //  1 => @account
+                    //  2 => @alias (NOTE: includes 2nd @alias; tree-sitter combines them into a single capture)
+                    //  3 => @note
+
+                    let capture_contents = |i, prefix| {
+                        matches
+                            .nodes_for_capture_index(i)
+                            .filter_map(|node_node| {
+                                substring(
+                                    buffer_contents.as_bytes(),
+                                    node_node.start_byte(),
+                                    node_node.end_byte(),
+                                )
+                                .ok()
+                                .and_then(|s| {
+                                    s.strip_prefix(prefix).map(str::trim).map(str::to_string)
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    };
+
+                    let get_note = || capture_contents(3, "note ").join(" ").trim().to_string();
+                    let get_aliases = || capture_contents(2, "alias ");
+
+                    log::debug!("account: {account}");
+
+                    let is_match = account == current_node_content || {
+                        let aliases = get_aliases();
+                        log::debug!("aliases: {aliases:?}");
+                        aliases.contains(&current_node_content)
+                    };
+
+                    if is_match {
+                        let note = get_note();
+
+                        Some(LedgerHover(Hover {
+                            contents: HoverContents::Scalar(MarkedString::String(
+                                if note.is_empty() {
+                                    format!("`{account}`")
+                                } else {
+                                    format!("`{account}`\n***\n*{note}*")
+                                },
+                            )),
+                            range: None,
+                        }))
+                    } else {
+                        // don't include current node content
+                        None
+                    }
+                },
+                visited,
+            )?,
+
+            // TODO: support commodities
+            // TODO: support payees (but they don't have notes so, what's the point?)
+            _ => return Ok(LocationBasedResult::None),
+        };
+
+        Ok(LocationBasedResult::Some {
+            range: LspRange {
+                start: Position {
+                    line: range.start_point.row as u32,
+                    character: range.start_point.column as u32,
+                },
+                end: Position {
+                    line: range.end_point.row as u32,
+                    character: range.end_point.column as u32,
+                },
+            },
+            results: hovers.into_iter().collect(),
         })
     }
 
@@ -2380,6 +2532,449 @@ mod test {
         }
     }
 
+    // TODO: test_hover_payees -> look up a payee by pattern, etc
+
+    #[test]
+    fn test_hover_accounts() {
+        init_logging();
+
+        {
+            // account without alias or note
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    account Account1
+
+                    2024/01/02 Payee1
+                        Account1  $1
+                        Other
+                    ",
+                ),
+                &Position {
+                    line: 4,
+                    character: 5,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 4,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 4,
+                        character: 12,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Account1`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // account with note but no alias
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    account Account1
+                        note This is account 1
+
+                    2024/01/02 Payee1
+                        Account1  $1
+                        Other
+                    ",
+                ),
+                &Position {
+                    line: 5,
+                    character: 5,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 5,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 12,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Account1`\n***\n*This is account 1*",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // account with alias
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    account Account1
+                        alias Act1
+
+                    2024/01/02 Payee1
+                        Act1  $1
+                        Other
+                    ",
+                ),
+                &Position {
+                    line: 5,
+                    character: 5,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 5,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 8,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Account1`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // account with note before alias
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    account Account1
+                        note This is account 1
+                        alias Act1
+
+                    2024/01/02 Payee1
+                        Act1  $1
+                        Other
+                    ",
+                ),
+                &Position {
+                    line: 6,
+                    character: 5,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 6,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 6,
+                        character: 8,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Account1`\n***\n*This is account 1*",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // account with note after alias
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    account Account1
+                        alias Act1
+                        note This is account 1
+
+                    2024/01/02 Payee1
+                        Act1  $1
+                        Other
+                    ",
+                ),
+                &Position {
+                    line: 6,
+                    character: 5,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 6,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 6,
+                        character: 8,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Account1`\n***\n*This is account 1*",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // account with multiple aliases but no note
+            let source = textwrap::dedent(
+                "
+                account Account1
+                    alias Act1
+                    alias Acct1
+
+                2024/01/02 Payee1
+                    Act1   $1
+                    Acct1  $1
+                    Other
+                ",
+            );
+
+            let hovers = get_hovers(
+                &source,
+                &Position {
+                    line: 6,
+                    character: 5,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 6,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 6,
+                        character: 8,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Account1`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+
+            let hovers = get_hovers(
+                &source,
+                &Position {
+                    line: 7,
+                    character: 5,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 7,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 7,
+                        character: 9,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Account1`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // account with multiple aliases and a note
+            let source = textwrap::dedent(
+                "
+                account Account1
+                    alias Act1
+                    note This is account 1
+                    alias Acct1
+
+                2024/01/02 Payee1
+                    Act1   $1
+                    Acct1  $1
+                    Other
+                ",
+            );
+
+            let hovers = get_hovers(
+                &source,
+                &Position {
+                    line: 7,
+                    character: 5,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 7,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 7,
+                        character: 8,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Account1`\n***\n*This is account 1*",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+
+            let hovers = get_hovers(
+                &source,
+                &Position {
+                    line: 8,
+                    character: 5,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 8,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 8,
+                        character: 9,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Account1`\n***\n*This is account 1*",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+    }
+
     #[test]
     fn test_formatting() {
         let source = textwrap::dedent(
@@ -2888,6 +3483,27 @@ mod test {
                 (range, results)
             }
             _ => panic!(),
+        }
+    }
+
+    fn get_hovers(
+        source: &str,
+        position: &Position,
+        backend: Option<LedgerBackend>,
+    ) -> (LspRange, Vec<LedgerHover>) {
+        let mut backend = backend.unwrap_or_else(|| {
+            let mut be = LedgerBackend::new();
+            be._test_project_files = Some(vec![]);
+            be.parse_document(&source);
+            be
+        });
+
+        let mut visited = HashSet::new();
+        match backend.hovers_for_position("unused in test", &source, &position, &mut visited) {
+            Ok(LocationBasedResult::Some { range, results }) => (range, results),
+            Ok(LocationBasedResult::NoNode(s)) => panic!("no node: {s}"),
+            Ok(LocationBasedResult::None) => panic!("no results"),
+            Err(err) => panic!("error: {err}"),
         }
     }
 

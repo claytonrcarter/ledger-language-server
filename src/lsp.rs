@@ -113,7 +113,7 @@ impl LanguageServer for Lsp {
             },
             env!("GIT_HASH"),
         );
-        log_debug!(self, "[initialize] {params:#?}");
+        log_debug!(self, "[initialize] {params:?}");
         log_debug!(
             self,
             "[initialize:initialization_options] {:#?}",
@@ -164,6 +164,7 @@ impl LanguageServer for Lsp {
                 //     commands: vec!["dummy.do_something".to_string()],
                 //     work_done_progress_options: Default::default(),
                 // }),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 references_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
@@ -660,6 +661,59 @@ impl LanguageServer for Lsp {
             target_range: Range::default(),
             target_selection_range: Range::default(),
         }])))
+    }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        log_debug!(self, "[hover] {params:?}");
+        let start_time = std::time::Instant::now();
+
+        let mut state = self.state.lock().await;
+        log_debug!(self, "[hover] acquired lock @ {:?}", start_time.elapsed());
+        let buffer_path = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .path();
+        let contents = match state.sources.get(buffer_path) {
+            Some(contents) => contents.clone(),
+            None => return Ok(None),
+        };
+
+        let mut visited = HashSet::new();
+        let hover = match state.backend.hovers_for_position(
+            buffer_path,
+            &contents,
+            &params.text_document_position_params.position,
+            &mut visited,
+        ) {
+            Ok(LocationBasedResult::Some { range: _, results }) => {
+                results.first().map(|h| h.0.clone())
+            }
+            Ok(LocationBasedResult::None) => {
+                log_debug!(
+                    self,
+                    INFO,
+                    "[hover] no hover for {:?}",
+                    &params.text_document_position_params.position
+                );
+                return Ok(None);
+            }
+            Ok(LocationBasedResult::NoNode(_report)) => {
+                log_debug!(self, INFO, "[hover] {_report}");
+                return Ok(None);
+            }
+            Err(err) => {
+                log!(self, ERROR, "[hover] {err}");
+                return Ok(None);
+            }
+        };
+
+        log!(
+            self,
+            "[hover:response] {hover:?} @ {:?}",
+            start_time.elapsed()
+        );
+        Ok(hover)
     }
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
