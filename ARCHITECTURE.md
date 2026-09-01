@@ -36,8 +36,12 @@ To update the `type-sitter` nodes:
 
 ```
 cargo install type-sitter-cli
+
+# either
 npm install tree-sitter-ledger
 type-sitter-cli node_modules/tree-sitter-ledger/src/node-types.json
+# or ...
+type-sitter-cli ../tree-sitter/tree-sitter-ledger/src/node-types.json
 ```
 
 [1]: https://github.com/ebkalderon/tower-lsp

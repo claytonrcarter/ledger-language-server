@@ -31,7 +31,8 @@ tree-sitter = "0.24"
 # temp: forked upstream
 # tree-sitter-ledger = { git = "https://github.com/claytonrcarter/tree-sitter-ledger.git", rev = "eaaf3f92dc018ea84b382625059292e361a3ef88" }
 # actual upstream
-tree-sitter-ledger = { git = "https://github.com/cbarrete/tree-sitter-ledger.git", rev = "96c92d4908a836bf8f661166721c98439f8afb80" }
+# NOTE: this is the last commit that supports tree-sitter 0.24 (0.25 after 22a1ab8)
+tree-sitter-ledger = { git = "https://github.com/cbarrete/tree-sitter-ledger.git", rev = "cd9642cf34ecbb5af98d59a0dad0e9bc068c495a" }
 type-sitter = { version = "0.6", default-features = false }
 walkdir = "2.5.0"
 
