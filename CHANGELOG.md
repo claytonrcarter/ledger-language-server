@@ -20,6 +20,7 @@ and this project adheres to
 - improved support for tag completions, in particular `:tag:` value-less tags
 - added support for formatting `payee` directives
 - fixed support for projects with non-ASCII paths
+- restored diagnostic updates on save
 
 ## [v0.0.7] - 2025-05-13
 

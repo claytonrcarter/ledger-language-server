@@ -173,8 +173,14 @@ impl LanguageServer for Lsp {
                 // }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 references_provider: Some(OneOf::Left(true)),
-                text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                    TextDocumentSyncKind::FULL,
+                text_document_sync: Some(TextDocumentSyncCapability::Options(
+                    TextDocumentSyncOptions {
+                        open_close: Some(true),
+                        change: Some(TextDocumentSyncKind::FULL),
+                        will_save: None,
+                        will_save_wait_until: None,
+                        save: Some(TextDocumentSyncSaveOptions::Supported(true)),
+                    },
                 )),
                 workspace: Some(WorkspaceServerCapabilities {
                     workspace_folders: Some(WorkspaceFoldersServerCapabilities {
@@ -946,13 +952,27 @@ mod test {
         );
 
         insta::assert_debug_snapshot!(response.capabilities.text_document_sync,
-            @r#"
+            @"
             Some(
-                Kind(
-                    Full,
+                Options(
+                    TextDocumentSyncOptions {
+                        open_close: Some(
+                            true,
+                        ),
+                        change: Some(
+                            Full,
+                        ),
+                        will_save: None,
+                        will_save_wait_until: None,
+                        save: Some(
+                            Supported(
+                                true,
+                            ),
+                        ),
+                    },
                 ),
             )
-            "#
+            "
         );
 
         insta::assert_debug_snapshot!(response.capabilities.workspace,
