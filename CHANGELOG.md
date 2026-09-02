@@ -10,6 +10,14 @@ and this project adheres to
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [v0.0.8] - 2026-09-02
+
+### Added
+
 - added support for "find references" for accounts and payees
 - added support for hovers/popups for accounts
 
