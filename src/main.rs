@@ -25,7 +25,6 @@ async fn main() {
             #[allow(clippy::unwrap_used)]
             let (file, source) = {
                 let file = Path::new(&file).canonicalize().unwrap();
-                let file = file.as_os_str().to_str().unwrap().to_string();
                 let source = contents_of_path(&file).unwrap();
                 (file, source)
             };
@@ -59,12 +58,15 @@ async fn main() {
 
 /// path must be canonicalize-able; either canonical on it's own, or valid
 /// relative to cwd
-pub fn contents_of_path(path: &str) -> Result<String> {
-    let p = Path::new(path)
+pub fn contents_of_path(path: &Path) -> Result<String> {
+    let p = path
         .canonicalize()
         .map_err(|err| anyhow::anyhow!("[contents_of_path] {err}"))?;
 
     fs::read_to_string(p).map_err(|err| {
-        anyhow::anyhow!("[contents_of_path] Unable to open file '{path}'\n[contents_of_path] {err}")
+        anyhow::anyhow!(
+            "[contents_of_path] Unable to open file '{path}'\n[contents_of_path] {err}",
+            path = path.display()
+        )
     })
 }
