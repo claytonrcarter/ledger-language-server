@@ -971,7 +971,7 @@ impl LedgerBackend {
     }
 
     /// Get the smallest named node at the given position.
-    fn node_at_position(&mut self, content: &str, position: &Position) -> Option<Node> {
+    fn node_at_position(&mut self, content: &str, position: &Position) -> Option<Node<'_>> {
         let debug = false;
         let tree = self.trees_cache.get(content)?;
 
