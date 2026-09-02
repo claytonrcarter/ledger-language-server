@@ -4,7 +4,7 @@ use crate::backend::{
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
@@ -39,7 +39,7 @@ pub struct LspState {
 
     // see https://github.com/ebkalderon/nix-language-server/blob/master/src/backend.rs#L14-L23
     /// Mapping of path names to file contents.
-    pub sources: HashMap<String, String>,
+    pub sources: HashMap<PathBuf, String>,
 }
 
 #[derive(Debug)]
@@ -96,6 +96,14 @@ macro_rules! log_debug {
             .log_message(MessageType::LOG, format!($($arg)+))
             .await;
     });
+}
+
+impl Lsp {
+    fn decode_path(&self, uri: &Url) -> Result<PathBuf> {
+        uri.to_file_path().map_err(|_| {
+            tower_lsp::jsonrpc::Error::invalid_params(format!("could not decode path: {uri}"))
+        })
+    }
 }
 
 #[tower_lsp::async_trait]
@@ -222,22 +230,22 @@ impl LanguageServer for Lsp {
             log_debug!(self, "[did_open] {p:?}");
         }
 
+        let Ok(path) = self.decode_path(&params.text_document.uri) else {
+            return;
+        };
+
         // on open, cache the file contents, generate initial completions, and
-        // run dianostics
+        // run diagnostics
         let mut state = self.state.lock().await;
-        state.sources.insert(
-            params.text_document.uri.path().to_owned(),
-            params.text_document.text.clone(),
-        );
+        state
+            .sources
+            .insert(path.clone(), params.text_document.text.clone());
         state.backend.parse_document(&params.text_document.text);
 
         self.client
             .publish_diagnostics(
                 params.text_document.uri.clone(),
-                LedgerBackend::diagnostics(
-                    params.text_document.uri.path(),
-                    &params.text_document.text,
-                ),
+                LedgerBackend::diagnostics(&path, &params.text_document.text),
                 None,
             )
             .await;
@@ -257,6 +265,10 @@ impl LanguageServer for Lsp {
             log_debug!(self, "[did_change] {p:?}");
         }
 
+        let Ok(path) = self.decode_path(&params.text_document.uri) else {
+            return;
+        };
+
         // on update, only cache the file contents and don't touch the
         // completions or diagnostics (because the buffer may be
         // dirty/incomplete/incorrect)
@@ -265,9 +277,7 @@ impl LanguageServer for Lsp {
             Some(content) => content.text.clone(),
             None => String::new(),
         };
-        state
-            .sources
-            .insert(params.text_document.uri.path().to_owned(), content.clone());
+        state.sources.insert(path, content.clone());
         state.backend.parse_document(&content);
     }
 
@@ -278,16 +288,20 @@ impl LanguageServer for Lsp {
             log_debug!(self, "[did_save] {p:?}");
         }
 
+        let Ok(path) = self.decode_path(&params.text_document.uri) else {
+            return;
+        };
+
         // on save, regenerate the completions and diagnostics, but don't cache
         // the file contents (params don't have access to updated buffer contents)
         // TODO figure out how to send TextDocumentSaveRegistrationOptions{include_text: Some(true)}
         // ... then we could update both
         let state = self.state.lock().await;
-        if let Some(content) = state.sources.get(params.text_document.uri.path()).cloned() {
+        if let Some(content) = state.sources.get(&path).cloned() {
             self.client
                 .publish_diagnostics(
                     params.text_document.uri.clone(),
-                    LedgerBackend::diagnostics(params.text_document.uri.path(), &content),
+                    LedgerBackend::diagnostics(&path, &content),
                     None,
                 )
                 .await;
@@ -302,14 +316,15 @@ impl LanguageServer for Lsp {
         log_debug!(self, "[code_action] {params:?}");
         let start_time = std::time::Instant::now();
 
+        let path = self.decode_path(&params.text_document.uri)?;
+
         let mut state = self.state.lock().await;
         log_debug!(
             self,
             "[code_action] acquired lock @ {:?}",
             start_time.elapsed()
         );
-        let pathname = params.text_document.uri.path();
-        let contents = match state.sources.get(pathname) {
+        let contents = match state.sources.get(&path) {
             Some(contents) => contents.clone(),
             None => return Ok(None),
         };
@@ -437,6 +452,8 @@ impl LanguageServer for Lsp {
         log_debug!(self, "[completion] {params:?}");
         let start_time = std::time::Instant::now();
 
+        let path = self.decode_path(&params.text_document_position.text_document.uri)?;
+
         // let contents = contents_of_path(params.text_document_position.text_document.uri.path());
         let mut state = self.state.lock().await;
         log_debug!(
@@ -444,15 +461,14 @@ impl LanguageServer for Lsp {
             "[completion] acquired lock @ {:?}",
             start_time.elapsed()
         );
-        let pathname = params.text_document_position.text_document.uri.path();
-        let contents = match state.sources.get(pathname) {
+        let contents = match state.sources.get(&path) {
             Some(contents) => contents.clone(),
             None => return Ok(None),
         };
 
         let mut visited = HashSet::new();
         let (range, completions) = match state.backend.completions_for_position(
-            pathname,
+            &path,
             &contents,
             &params.text_document_position.position,
             &mut visited,
@@ -530,6 +546,8 @@ impl LanguageServer for Lsp {
         log_debug!(self, "[formatting] {params:?}");
         let _start_time = std::time::Instant::now();
 
+        let path = self.decode_path(&params.text_document.uri)?;
+
         let state = self.state.lock().await;
         if !state.config.format {
             // we already told the client that we don't "support" formatting,
@@ -541,7 +559,7 @@ impl LanguageServer for Lsp {
             return Ok(None);
         }
 
-        let source = match state.sources.get(params.text_document.uri.path()) {
+        let source = match state.sources.get(&path) {
             Some(source) => source,
             None => return Ok(None),
         };
@@ -574,13 +592,11 @@ impl LanguageServer for Lsp {
     ) -> Result<Option<GotoDefinitionResponse>> {
         log_debug!(self, "[goto_definition] {params:?}");
 
+        let buffer_path =
+            self.decode_path(&params.text_document_position_params.text_document.uri)?;
+
         let state = self.state.lock().await;
-        let buffer_path = params
-            .text_document_position_params
-            .text_document
-            .uri
-            .path();
-        let source = match state.sources.get(buffer_path) {
+        let source = match state.sources.get(&buffer_path) {
             Some(source) => source,
             None => return Ok(None),
         };
@@ -614,13 +630,14 @@ impl LanguageServer for Lsp {
             let path = if path.is_absolute() {
                 path.to_path_buf()
             } else {
-                let dir = match Path::new(buffer_path).parent() {
+                let dir = match buffer_path.parent() {
                     Some(dir) => dir,
                     None => {
                         log!(
                             self,
                             ERROR,
-                            "[goto_definition] Buffer has no parent dir? {buffer_path}"
+                            "[goto_definition] Buffer has no parent dir? {}",
+                            buffer_path.display()
                         );
                         return Ok(None);
                     }
@@ -667,21 +684,19 @@ impl LanguageServer for Lsp {
         log_debug!(self, "[hover] {params:?}");
         let start_time = std::time::Instant::now();
 
+        let buffer_path =
+            self.decode_path(&params.text_document_position_params.text_document.uri)?;
+
         let mut state = self.state.lock().await;
         log_debug!(self, "[hover] acquired lock @ {:?}", start_time.elapsed());
-        let buffer_path = params
-            .text_document_position_params
-            .text_document
-            .uri
-            .path();
-        let contents = match state.sources.get(buffer_path) {
+        let contents = match state.sources.get(&buffer_path) {
             Some(contents) => contents.clone(),
             None => return Ok(None),
         };
 
         let mut visited = HashSet::new();
         let hover = match state.backend.hovers_for_position(
-            buffer_path,
+            &buffer_path,
             &contents,
             &params.text_document_position_params.position,
             &mut visited,
@@ -720,21 +735,22 @@ impl LanguageServer for Lsp {
         log_debug!(self, "[references] {params:?}");
         let start_time = std::time::Instant::now();
 
+        let buffer_path = self.decode_path(&params.text_document_position.text_document.uri)?;
+
         let mut state = self.state.lock().await;
         log_debug!(
             self,
             "[references] acquired lock @ {:?}",
             start_time.elapsed()
         );
-        let buffer_path = params.text_document_position.text_document.uri.path();
-        let contents = match state.sources.get(buffer_path) {
+        let contents = match state.sources.get(&buffer_path) {
             Some(contents) => contents.clone(),
             None => return Ok(None),
         };
 
         let mut visited = HashSet::new();
         let (_range, locations) = match state.backend.references_for_position(
-            buffer_path,
+            &buffer_path,
             &contents,
             &params.text_document_position.position,
             params.context.include_declaration,
@@ -770,16 +786,15 @@ impl LanguageServer for Lsp {
             /// Could not build a URL for the given path.
             UnableToBuild,
         }
-        let mut path_urls: HashMap<String, Url> = HashMap::new();
-        let mut url_for_path = |file: &str| match path_urls.get(file) {
+        let mut path_urls: HashMap<PathBuf, Url> = HashMap::new();
+        let mut url_for_path = |path: &PathBuf| match path_urls.get(path) {
             Some(url) => Ok(url.clone()),
             None => {
                 let url = {
-                    let path = Path::new(&file);
                     let path = if path.is_absolute() {
                         path.to_path_buf()
                     } else {
-                        let dir = match Path::new(buffer_path).parent() {
+                        let dir = match buffer_path.parent() {
                             Some(dir) => dir,
                             None => {
                                 return Err(UrlError::NoParent);
@@ -802,7 +817,7 @@ impl LanguageServer for Lsp {
                     }
                 };
 
-                path_urls.insert(file.to_string(), url.clone());
+                path_urls.insert(path.clone(), url.clone());
 
                 Ok(url)
             }
@@ -821,15 +836,26 @@ impl LanguageServer for Lsp {
                     log!(
                         self,
                         ERROR,
-                        "[references] Buffer has no parent dir? {buffer_path}"
+                        "[references] Buffer has no parent dir? {}",
+                        buffer_path.display()
                     );
                 }
                 Err(UrlError::CouldNotCanonicalize(err)) => {
-                    log!(self, ERROR, "[references] Could not canonicalize {file}",);
+                    log!(
+                        self,
+                        ERROR,
+                        "[references] Could not canonicalize {}",
+                        file.display()
+                    );
                     log!(self, ERROR, "[references] {err}");
                 }
                 Err(UrlError::UnableToBuild) => {
-                    log!(self, ERROR, "[references] Unable to build url for {file}",);
+                    log!(
+                        self,
+                        ERROR,
+                        "[references] Unable to build url for {}",
+                        file.display()
+                    );
                 }
             };
         }
@@ -1450,6 +1476,101 @@ mod test {
         Ok(())
     }
 
+    /// Confirm that URL-encoded, non-ASCII paths are handled correctly. The
+    /// parent directory of the buffer is sent in the request URL-encoded, and
+    /// must be decoded so that relative `include` directives can be resolved.
+    /// See issue #4.
+    #[test_log::test(tokio::test)]
+    async fn completions_with_url_encoded_path() -> anyhow::Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let uri = {
+            // Prep a workspace fixture:
+            // - project directory named café
+            // - café encoded is `caf%C3%A9`
+            // - contains a single ledger file from which we'll read completions
+            // - main ledger file exists only in memory, sent to LSP via didOpen
+
+            let project_dir = tmp.path().join("café");
+            std::fs::create_dir(&project_dir)?;
+
+            std::fs::write(
+                project_dir.join("included.ledger"),
+                textwrap::dedent(
+                    "
+                2024/01/02 IncludedPayee
+                    Assets:Included
+                ",
+                ),
+            )?;
+
+            let uri = Url::from_file_path(project_dir.join("main.ledger"))
+                .map_err(|()| anyhow::anyhow!("could not build file uri"))?;
+
+            assert!(
+                uri.path().contains("caf%C3%A9"),
+                "uri should be percent-encoded, got: {}",
+                uri.path()
+            );
+
+            uri
+        };
+
+        let mut context = TestContext::new().await?;
+        context.initialize().await?;
+
+        let source = textwrap::dedent(
+            "
+            include included.ledger
+
+            2024/01/02 Payee
+                As
+            ",
+        );
+
+        let did_open = jsonrpc::Request::build("textDocument/didOpen")
+            .params(serde_json::json!({"textDocument": {
+                "uri": uri.as_str(),
+                "text": source,
+                "version": 0,
+                "languageId": "ledger"
+            }}))
+            .finish();
+        context.send(&did_open).await?;
+
+        // account completion at the `As` posting (line 4, just after "As")
+        let completion = jsonrpc::Request::build("textDocument/completion")
+            .id(2)
+            .params(serde_json::json!({
+                "textDocument": { "uri": uri.as_str() },
+                "position": { "line": 4, "character": 6 }
+            }))
+            .finish();
+        context.send(&completion).await?;
+
+        let completions = match context
+            .recv::<Option<CompletionResponse>>(Some(2))
+            .await?
+            .unwrap()
+        {
+            CompletionResponse::Array(completions) => completions,
+            CompletionResponse::List(_) => unreachable!(),
+        };
+        let labels = completions
+            .iter()
+            .map(|item| item.label.clone())
+            .collect::<Vec<_>>();
+
+        // `Assets:Included` is only reachable if the encoded project dir was
+        // decoded, and the included file was read from disk. In other words,
+        // café/included.ledger exists, but caf%C3%A9/included.ledger does not.
+        assert!(
+            labels.contains(&"Assets:Included".to_string()),
+            "expected the included account in completions, got: {labels:?}"
+        );
+
+        Ok(())
+    }
+
     #[test_log::test(tokio::test)]
     async fn completions_from_invalid_document_no_accounts() -> anyhow::Result<()> {
         let mut context = TestContext::new().await?;
@@ -1794,8 +1915,20 @@ mod test {
             Ok(())
         }
 
+        /// Receive a response from the language server.
+        ///
+        /// If no `id` is given, then the first response (barring log messages)
+        /// is returned.
+        ///
+        /// If an `id` is given, returns the JSON-RPC *response* to the request
+        /// with the given `id`, skipping any server-initiated notifications (eg
+        /// `textDocument/publishDiagnostics` emitted during `did_open`) and
+        /// responses to other requests. Assumes the server issues no
+        /// client-bound requests (those carry a `method` and are skipped rather
+        /// than answered).
         pub async fn recv<R: std::fmt::Debug + serde::de::DeserializeOwned>(
             &mut self,
+            id: Option<i64>,
         ) -> anyhow::Result<R> {
             // TODO split response for single messages
             loop {
@@ -1809,15 +1942,24 @@ mod test {
 
                 tracing::debug!("recv: {payload}");
 
-                // We can receive both responses *to our requests* as well as
-                // requests initiated by the server. We only care about the
-                // former (which will successfully parse as a
-                // `jsonrpc::Response`), so we discard everything else,
-                // including `window/logMessage` and
-                // `textDocument/publishDiagnostics`.
+                // We can receive responses *to our requests* as well as
+                // requests and notifications initiated by the server (eg
+                // `window/logMessage`, `textDocument/publishDiagnostics`). We
+                // only care about responses, which successfully parse as a
+                // `jsonrpc::Response`, so we discard everything else. When an
+                // `id` is given, we additionally skip responses to other
+                // requests.
                 match serde_json::from_str::<jsonrpc::Response>(payload) {
                     Ok(response) => {
-                        let (_id, result) = response.into_parts();
+                        let (response_id, result) = response.into_parts();
+                        match id {
+                            Some(id) if response_id != jsonrpc::Id::Number(id) => {
+                                tracing::debug!("recv: skipping response for {response_id:?}");
+                                continue;
+                            }
+                            Some(_) | None => {}
+                        }
+
                         return Ok(serde_json::from_value(result?)?);
                     }
                     Err(_) => {
@@ -1833,7 +1975,7 @@ mod test {
             request: &jsonrpc::Request,
         ) -> anyhow::Result<R> {
             self.send(request).await?;
-            self.recv().await
+            self.recv(None).await
         }
 
         pub async fn initialize(&mut self) -> anyhow::Result<()> {

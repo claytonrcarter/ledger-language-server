@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Result};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use tower_lsp::lsp_types::Range as LspRange;
 use tower_lsp::lsp_types::*;
@@ -86,7 +86,7 @@ pub enum LocationBasedResult<T> {
 
 #[derive(Debug, Eq, Hash, PartialEq)]
 pub struct LedgerLocation {
-    pub file: String,
+    pub file: PathBuf,
     pub range: LedgerRange,
 }
 
@@ -303,10 +303,10 @@ impl LedgerBackend {
     /// `buffer_path` and `visited` are used to track included documents
     pub fn completions_for_position(
         &mut self,
-        buffer_path: &str,
+        buffer_path: &Path,
         content: &str,
         position: &Position,
-        visited: &mut HashSet<String>,
+        visited: &mut HashSet<PathBuf>,
     ) -> Result<LocationBasedResult<LedgerCompletion>> {
         let mut completions: HashSet<LedgerCompletion> = HashSet::new();
 
@@ -497,24 +497,25 @@ impl LedgerBackend {
     pub fn filter_nodes<F, I, T>(
         &mut self,
         results: &mut HashSet<T>,
-        buffer_path: &str,
+        buffer_path: &Path,
         query: &str,
         buffer_contents: &str,
         filter_fn: &F,
-        visited: &mut HashSet<String>,
+        visited: &mut HashSet<PathBuf>,
     ) -> Result<()>
     where
         // first cap content, file name, file content, node range, matches
-        F: Fn(String, &str, &str, Range, &QueryMatch) -> I,
+        F: Fn(String, &Path, &str, Range, &QueryMatch) -> I,
         I: IntoIterator<Item = T>,
         T: Hash + Eq,
     {
-        let current_dir = match Path::new(buffer_path).parent() {
+        let current_dir = match buffer_path.parent() {
             Some(dir) => dir,
             None => {
                 // TODO ??
                 return Err(anyhow!(
-                    "[completions] Buffer has no parent dir? {buffer_path}"
+                    "[completions] Buffer has no parent dir? {}",
+                    buffer_path.display()
                 ));
             }
         };
@@ -525,7 +526,8 @@ impl LedgerBackend {
                 // self.parse_document(content);
                 // self.trees_cache.get(content).unwrap().clone()
                 return Err(anyhow!(
-                    "no tree found for contents of file '{buffer_path}'"
+                    "no tree found for contents of file '{}'",
+                    buffer_path.display()
                 ));
             }
         };
@@ -564,33 +566,25 @@ impl LedgerBackend {
                 } else {
                     current_dir.join(path)
                 };
-                let filename = path.as_os_str().to_str().unwrap_or(&filename);
 
-                if visited.contains(filename) {
+                if visited.contains(&path) {
                     continue;
                 } else {
-                    visited.insert(filename.to_string());
+                    visited.insert(path.clone());
                 }
 
                 let included_content = self
                     ._test_included_content
                     .as_ref()
                     .map_or_else(
-                        || contents_of_path(filename),
+                        || contents_of_path(&path),
                         |content| Ok(content.to_string()),
                     )
                     .unwrap_or_else(|_| String::new());
 
                 self.parse_document(&included_content);
 
-                self.filter_nodes(
-                    results,
-                    filename,
-                    query,
-                    &included_content,
-                    filter_fn,
-                    visited,
-                )?;
+                self.filter_nodes(results, &path, query, &included_content, filter_fn, visited)?;
             }
         }
 
@@ -600,14 +594,15 @@ impl LedgerBackend {
     fn completions_insert_project_files(
         &self,
         completions: &mut HashSet<LedgerCompletion>,
-        buffer_path: &str,
+        buffer_path: &Path,
     ) -> Result<()> {
-        let current_dir = match Path::new(buffer_path).parent() {
+        let current_dir = match buffer_path.parent() {
             Some(dir) => dir,
             None => {
                 // TODO ??
                 return Err(anyhow!(
-                    "[completions] Buffer has no parent dir? {buffer_path}"
+                    "[completions] Buffer has no parent dir? {}",
+                    buffer_path.display()
                 ));
             }
         };
@@ -711,7 +706,7 @@ impl LedgerBackend {
         }));
     }
 
-    pub fn diagnostics(buffer_path: &str, content: &str) -> Vec<Diagnostic> {
+    pub fn diagnostics(buffer_path: &Path, content: &str) -> Vec<Diagnostic> {
         content
             .split('\n')
             .enumerate()
@@ -747,8 +742,7 @@ impl LedgerBackend {
                     if path.is_absolute() {
                         path.to_path_buf()
                     } else {
-                        // FIXME what is parent() is None?
-                        let dir = Path::new(buffer_path).parent()?;
+                        let dir = buffer_path.parent()?;
                         dir.join(path)
                     }
                 };
@@ -772,11 +766,11 @@ impl LedgerBackend {
 
     pub fn references_for_position(
         &mut self,
-        buffer_path: &str,
+        buffer_path: &Path,
         content: &str,
         position: &Position,
         include_declaration: bool,
-        visited: &mut HashSet<String>,
+        visited: &mut HashSet<PathBuf>,
     ) -> Result<LocationBasedResult<LedgerLocation>> {
         let mut locations: HashSet<LedgerLocation> = HashSet::new();
 
@@ -828,7 +822,7 @@ impl LedgerBackend {
             &|node_content, buffer_path, _, range, _| {
                 if node_content == current_node_content {
                     Some(LedgerLocation {
-                        file: buffer_path.to_string(),
+                        file: buffer_path.to_path_buf(),
                         range: LedgerRange(lsp_range_from_ts_range(range)),
                     })
                 } else {
@@ -856,10 +850,10 @@ impl LedgerBackend {
 
     pub fn hovers_for_position(
         &mut self,
-        buffer_path: &str,
+        buffer_path: &Path,
         content: &str,
         position: &Position,
-        visited: &mut HashSet<String>,
+        visited: &mut HashSet<PathBuf>,
     ) -> Result<LocationBasedResult<LedgerHover>> {
         let mut hovers: HashSet<LedgerHover> = HashSet::new();
 
@@ -3445,7 +3439,12 @@ mod test {
         });
 
         let mut visited = HashSet::new();
-        match backend.completions_for_position("unused in test", &source, &position, &mut visited) {
+        match backend.completions_for_position(
+            Path::new("unused in test"),
+            &source,
+            &position,
+            &mut visited,
+        ) {
             Ok(LocationBasedResult::Some {
                 range,
                 results: mut completions,
@@ -3472,7 +3471,7 @@ mod test {
 
         let mut visited = HashSet::new();
         match backend.references_for_position(
-            "unused in test",
+            Path::new("unused in test"),
             &source,
             &position,
             include_declaration,
@@ -3499,7 +3498,12 @@ mod test {
         });
 
         let mut visited = HashSet::new();
-        match backend.hovers_for_position("unused in test", &source, &position, &mut visited) {
+        match backend.hovers_for_position(
+            Path::new("unused in test"),
+            &source,
+            &position,
+            &mut visited,
+        ) {
             Ok(LocationBasedResult::Some { range, results }) => (range, results),
             Ok(LocationBasedResult::NoNode(s)) => panic!("no node: {s}"),
             Ok(LocationBasedResult::None) => panic!("no results"),
