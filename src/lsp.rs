@@ -164,8 +164,7 @@ impl LanguageServer for Lsp {
                     all_commit_characters: None,
                     completion_item: None,
                 }),
-                document_formatting_provider: Some(OneOf::Left(true))
-                    .filter(|_| state.config.format),
+                document_formatting_provider: state.config.format.then_some(OneOf::Left(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 execute_command_provider: None,
                 // execute_command_provider: Some(ExecuteCommandOptions {
