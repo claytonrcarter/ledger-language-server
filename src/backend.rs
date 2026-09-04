@@ -67,6 +67,53 @@ fn lsp_range_from_ts_range(range: tree_sitter::Range) -> LspRange {
     }
 }
 
+pub enum Tag {
+    JustTag(String),
+    WithValue(String),
+}
+
+impl Tag {
+    pub fn name(&self) -> String {
+        match self {
+            Tag::JustTag(tag) => tag.clone(),
+            Tag::WithValue(tag) => tag.clone(),
+        }
+    }
+}
+
+fn tags_from_note(note: &str) -> Vec<Tag> {
+    // trim leading whitespace and comment chars
+    // https://ledger-cli.org/doc/ledger3.html#Commenting-on-your-Journal
+    let trimmed = note.trim_start_matches([' ', '\t', ';', '#', '%', '|', '*']);
+
+    log::debug!("note content: {note:?}");
+    log::debug!("trimmed: {trimmed:?}");
+
+    let captures = TAG_RE.captures(trimmed);
+    log::debug!("captures: {captures:?}");
+
+    match captures {
+        Some(captures) if captures.name("just_tag").is_some() => captures["just_tag"]
+            .trim()
+            .split(':')
+            .filter(|tag| !tag.is_empty())
+            .map(|tag| Tag::JustTag(tag.to_string()))
+            .collect(),
+        Some(captures) if captures.name("tag_with_value").is_some() => {
+            vec![Tag::WithValue(
+                captures["tag_with_value"]
+                    .trim_end_matches([' ', ':'])
+                    .to_string(),
+            )]
+        }
+        Some(captures) => {
+            log::error!("tag regex failure; this should be unreachable: {captures:?}");
+            Vec::new()
+        }
+        None => Vec::new(),
+    }
+}
+
 #[derive(Debug)]
 pub enum LocationBasedResult<T> {
     /// Results were found for the node at this location.
@@ -420,39 +467,14 @@ impl LedgerBackend {
                             return Vec::new();
                         }
 
-                        // trim leading whitespace and comment chars
-                        // https://ledger-cli.org/doc/ledger3.html#Commenting-on-your-Journal
-                        let trimmed = note.trim_start_matches([' ', '\t', ';', '#', '%', '|', '*']);
-
-                        log::debug!("note content: {note:?}");
-                        log::debug!("trimmed: {trimmed:?}");
-
-                        let captures = TAG_RE.captures(trimmed);
-                        log::debug!("captures: {captures:?}");
-
-                        match captures {
-                            Some(captures) if captures.name("just_tag").is_some() => captures
-                                ["just_tag"]
-                                .trim()
-                                .split(':')
-                                .filter(|tag| !tag.is_empty())
-                                .map(|tag| LedgerCompletion::Tag(format!(":{tag}:")))
-                                .collect(),
-                            Some(captures) if captures.name("tag_with_value").is_some() => {
-                                let mut tag = captures["tag_with_value"].to_string();
-                                if !tag.ends_with(' ') {
-                                    tag.push(' ');
-                                }
-                                vec![LedgerCompletion::Tag(tag)]
-                            }
-                            Some(captures) => {
-                                log::error!(
-                                    "tag regex failure; this should be unreachable: {captures:?}"
-                                );
-                                Vec::new()
-                            }
-                            None => Vec::new(),
-                        }
+                        tags_from_note(&note)
+                            .iter()
+                            .map(|tag| match tag {
+                                Tag::JustTag(tag) => format!(":{tag}:"),
+                                Tag::WithValue(tag) => format!("{tag}: "),
+                            })
+                            .map(LedgerCompletion::Tag)
+                            .collect()
                     },
                     visited,
                 )?
@@ -761,7 +783,7 @@ impl LedgerBackend {
                 &mut defined_values,
                 buffer_path,
                 query,
-                6, // @directive
+                6, // 1-based index of @directive
                 content,
                 &|_node, _node_content, _buffer_path, buffer_contents, matches| {
                     #[allow(clippy::type_complexity)]
@@ -810,10 +832,14 @@ impl LedgerBackend {
         let query = "
             (plain_xact
               (payee)? @payee
-              (posting
-                (account) @account
-                (amount (commodity) @commodity)?
-              )*
+              [
+                (posting
+             	  (account) @account
+                  (amount (commodity) @commodity)?
+                  (note)? @note
+                )
+               	(note) @note
+              ]
             ) @xact
             ";
 
@@ -821,15 +847,17 @@ impl LedgerBackend {
             &mut diagnostics,
             buffer_path,
             query,
-            3, // @xact
+            5, // 1-based index of @xact, not counting duplicates
             content,
             &|_node, _node_content, _buffer_path, buffer_contents, matches| {
                 #[allow(clippy::type_complexity)]
-                let captures: [(&str, fn(String) -> DefinedValue, bool); 3] = [
-                    // must be in same order as captures, above
+                let captures: [(&str, fn(String) -> DefinedValue, bool); 4] = [
+                    // must be in same order as captures, above; do not need to
+                    // match capture names
                     ("payee", DefinedValue::Payee, false),
                     ("account", DefinedValue::Account, true),
                     ("commodity", DefinedValue::Commodity, true),
+                    ("tag", DefinedValue::Tag, true),
                 ];
 
                 let defined_values = &defined_values;
@@ -837,28 +865,38 @@ impl LedgerBackend {
                     .zip(captures)
                     .filter(|(_, (_, _, should_report))| *should_report)
                     .flat_map(|(i, (name, make, _))| {
-                        matches.nodes_for_capture_index(i).filter_map(move |node| {
-                            substring(
+                        matches.nodes_for_capture_index(i).flat_map(move |node| {
+                            let value = match substring(
                                 buffer_contents.as_bytes(),
                                 node.start_byte(),
                                 node.end_byte(),
-                            )
-                            .ok()
-                            .and_then(|value| {
-                                let value = if node.kind() == "account" {
-                                    value.trim_matches(['[', ']', '(', ')'])
-                                } else {
-                                    &value
-                                };
-                                if defined_values.contains(&make(value.to_string())) {
-                                    None
-                                } else {
-                                    Some(TempDiagnostic((
-                                        node.range(),
-                                        format!("Undefined {name}: {value}"),
-                                    )))
-                                }
-                            })
+                            ) {
+                                Ok(s) => s,
+                                Err(_) => return Vec::new(),
+                            };
+
+                            let values = if node.kind() == "note" {
+                                tags_from_note(&value).iter().map(|t| t.name()).collect()
+                            } else if node.kind() == "account" {
+                                vec![value.trim_matches(['[', ']', '(', ')']).to_string()]
+                            } else {
+                                vec![value]
+                            };
+
+                            values
+                                .iter()
+                                .filter_map(|value| {
+                                    if defined_values.contains(&make(value.clone())) {
+                                        None
+                                    } else {
+                                        Some(TempDiagnostic((
+                                            // FIXME: tags should only highlight the tag, not the whole note
+                                            node.range(),
+                                            format!("Undefined {name}: {value}"),
+                                        )))
+                                    }
+                                })
+                                .collect()
                         })
                     })
                     .collect::<Vec<_>>()
@@ -1361,6 +1399,7 @@ mod test {
         "#
         );
     }
+
     #[test]
     fn test_diagnostics_undefined_values() {
         let source = textwrap::dedent(
@@ -1468,6 +1507,100 @@ mod test {
                 code_description: None,
                 source: None,
                 message: "Undefined account: Account2",
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+        ]
+        "#
+        );
+    }
+
+    #[test]
+    fn test_diagnostics_undefined_tags() {
+        let source = textwrap::dedent(
+            "
+            account Account
+            tag Foo
+            tag Bar
+
+            2024/01/02 Payee
+                ; Foo: value
+                Account  1 ; :Qux:
+                ; Zip: value
+                Account  1 ; :Bar:
+                ; :Yurt:
+                Account
+            ",
+        );
+
+        let diagnostics = get_diagnostics(&source, None);
+
+        insta::assert_debug_snapshot!(diagnostics,
+            @r#"
+        [
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 7,
+                        character: 15,
+                    },
+                    end: Position {
+                        line: 7,
+                        character: 22,
+                    },
+                },
+                severity: Some(
+                    Warning,
+                ),
+                code: None,
+                code_description: None,
+                source: None,
+                message: "Undefined tag: Qux",
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 8,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 8,
+                        character: 16,
+                    },
+                },
+                severity: Some(
+                    Warning,
+                ),
+                code: None,
+                code_description: None,
+                source: None,
+                message: "Undefined tag: Zip",
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 10,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 10,
+                        character: 12,
+                    },
+                },
+                severity: Some(
+                    Warning,
+                ),
+                code: None,
+                code_description: None,
+                source: None,
+                message: "Undefined tag: Yurt",
                 related_information: None,
                 tags: None,
                 data: None,
