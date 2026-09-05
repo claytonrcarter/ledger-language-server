@@ -337,7 +337,7 @@ impl LedgerBackend {
                 buffer_path,
                 "(account) @account",
                 content,
-                &|account, _, _, _, _| {
+                &|_node, account, _, _, _| {
                     if account != current_node_content {
                         Some(LedgerCompletion::Account(account))
                     } else {
@@ -387,7 +387,7 @@ impl LedgerBackend {
                 buffer_path,
                 "(payee) @payee",
                 content,
-                &|payee, _, _, _, _| {
+                &|_node, payee, _, _, _| {
                     if payee != current_node_content {
                         Some(LedgerCompletion::Payee(payee))
                     } else {
@@ -411,7 +411,7 @@ impl LedgerBackend {
                     buffer_path,
                     "(note) @note",
                     content,
-                    &|note, _, _, _, _| {
+                    &|_node, note, _, _, _| {
                         if note == current_node_content {
                             // don't include current node content
                             return Vec::new();
@@ -504,8 +504,8 @@ impl LedgerBackend {
         visited: &mut HashSet<PathBuf>,
     ) -> Result<()>
     where
-        // first cap content, file name, file content, node range, matches
-        F: Fn(String, &Path, &str, Range, &QueryMatch) -> I,
+        // first capture node, node content, file name, file content, matches
+        F: Fn(&Node, String, &Path, &str, &QueryMatch) -> I,
         I: IntoIterator<Item = T>,
         T: Hash + Eq,
     {
@@ -545,13 +545,13 @@ impl LedgerBackend {
         let mut matches = cursor.matches(&ts_query, tree.root_node(), source);
         while let Some(m) = matches.next() {
             // query as passed in
-            for n in m.nodes_for_capture_index(1) {
-                let capture_text = substring(source, n.start_byte(), n.end_byte())?;
+            for node in m.nodes_for_capture_index(1) {
+                let capture_text = substring(source, node.start_byte(), node.end_byte())?;
                 results.extend(filter_fn(
+                    &node,
                     capture_text,
                     buffer_path,
                     buffer_contents,
-                    n.range(),
                     m,
                 ));
             }
@@ -706,7 +706,59 @@ impl LedgerBackend {
         }));
     }
 
-    pub fn diagnostics(buffer_path: &Path, content: &str) -> Vec<Diagnostic> {
+    pub fn diagnostics(&mut self, buffer_path: &Path, content: &str) -> Vec<Diagnostic> {
+        #[derive(Eq, PartialEq, Hash)]
+        struct TempDiagnostic((Range, String));
+        let mut diagnostics: HashSet<TempDiagnostic> = HashSet::new();
+        let mut visited: HashSet<PathBuf> = HashSet::new();
+        let query = "(plain_xact) @xact";
+
+        // TODO: this is prob crawling included files, too; but should it not be?
+        let Ok(()) = self.filter_nodes(
+            &mut diagnostics,
+            buffer_path,
+            query,
+            content,
+            &|node, _node_content, _buffer_path, _buffer_contents, _matches| {
+                let mut cursor = node.walk();
+                let count = node
+                    .named_children(&mut cursor)
+                    .filter(|child| child.kind() == "posting")
+                    .filter(|posting| {
+                        let mut cursor = node.walk();
+                        let mut children = posting.named_children(&mut cursor);
+                        children
+                            .find(|child| {
+                                child.kind() == "amount" || child.kind() == "balance_assertion"
+                            })
+                            .is_none()
+                    })
+                    .count();
+
+                if count > 1 {
+                    Some(TempDiagnostic((
+                        node.range(),
+                        format!("Only 1 elided amount allowed per transaction. Found {count}."),
+                    )))
+                } else {
+                    None
+                }
+            },
+            &mut visited,
+        ) else {
+            return Vec::new();
+        };
+
+        diagnostics
+            .into_iter()
+            .map(|TempDiagnostic((range, message))| {
+                Diagnostic::new_simple(lsp_range_from_ts_range(range), message)
+            })
+            .chain(self.diagnostics_includes(buffer_path, content))
+            .collect()
+    }
+
+    fn diagnostics_includes(&self, buffer_path: &Path, content: &str) -> Vec<Diagnostic> {
         content
             .split('\n')
             .enumerate()
@@ -819,11 +871,11 @@ impl LedgerBackend {
             buffer_path,
             query,
             content,
-            &|node_content, buffer_path, _, range, _| {
+            &|node, node_content, buffer_path, _, _| {
                 if node_content == current_node_content {
                     Some(LedgerLocation {
                         file: buffer_path.to_path_buf(),
-                        range: LedgerRange(lsp_range_from_ts_range(range)),
+                        range: LedgerRange(lsp_range_from_ts_range(node.range())),
                     })
                 } else {
                     // don't include current node content
@@ -895,7 +947,7 @@ impl LedgerBackend {
                 )
                 ",
                 content,
-                &|account, _buffer_path, buffer_contents, _range, matches| {
+                &|_node, account, _buffer_path, buffer_contents, matches| {
                     // capture indices:
                     //  1 => @account
                     //  2 => @alias (NOTE: includes 2nd @alias; tree-sitter combines them into a single capture)
@@ -1075,6 +1127,54 @@ mod test {
 
     fn init_logging() {
         let _ = env_logger::builder().is_test(true).try_init();
+    }
+
+    #[test]
+    fn test_diagnostics_elided_amounts() {
+        let source = textwrap::dedent(
+            "
+            2024/01/02 Payee1
+                Account1  $1 ; 1 elided amount
+                Account1
+
+            2024/01/02 Payee
+                Account  ; 2 elided amounts
+                Account
+
+            2024/01/02 Payee
+                Account  = $1 ; balance assertion counts as amount
+                Account
+            ",
+        );
+
+        let diagnostics = get_diagnostics(&source, None);
+
+        insta::assert_debug_snapshot!(diagnostics,
+            @r#"
+        [
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 5,
+                        character: 0,
+                    },
+                    end: Position {
+                        line: 8,
+                        character: 0,
+                    },
+                },
+                severity: None,
+                code: None,
+                code_description: None,
+                source: None,
+                message: "Only 1 elided amount allowed per transaction. Found 2.",
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+        ]
+        "#
+        );
     }
 
     #[test]
@@ -3426,6 +3526,17 @@ mod test {
     //
     //
     //
+    fn get_diagnostics(source: &str, backend: Option<LedgerBackend>) -> Vec<Diagnostic> {
+        let mut backend = backend.unwrap_or_else(|| {
+            let mut be = LedgerBackend::new();
+            be._test_project_files = Some(vec![]);
+            be.parse_document(&source);
+            be
+        });
+
+        backend.diagnostics(Path::new("unused in test"), &source)
+    }
+
     fn get_completions(
         source: &str,
         position: &Position,
