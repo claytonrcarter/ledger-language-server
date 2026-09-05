@@ -937,7 +937,7 @@ impl LedgerBackend {
                 let mut diag = Diagnostic::new_simple(lsp_range_from_ts_range(range), message);
                 // TODO: provide config to change severity, none if off, warning if strict, error if pedantic
                 diag.severity = Some(severity);
-                // diag.source = Some("ledger-ls".to_string());
+                diag.source = Some("ledger-ls".to_string());
                 diag
             })
             .collect()
@@ -994,7 +994,10 @@ impl LedgerBackend {
         diagnostics
             .into_iter()
             .map(|TempDiagnostic((range, message))| {
-                Diagnostic::new_simple(lsp_range_from_ts_range(range), message)
+                let mut diag = Diagnostic::new_simple(lsp_range_from_ts_range(range), message);
+                diag.severity = Some(DiagnosticSeverity::ERROR);
+                diag.source = Some("ledger-ls".to_string());
+                diag
             })
             .collect()
     }
@@ -1416,10 +1419,14 @@ mod test {
                         character: 0,
                     },
                 },
-                severity: None,
+                severity: Some(
+                    Error,
+                ),
                 code: None,
                 code_description: None,
-                source: None,
+                source: Some(
+                    "ledger-ls",
+                ),
                 message: "Only 1 elided amount allowed per transaction. Found 2.",
                 related_information: None,
                 tags: None,
@@ -1476,7 +1483,9 @@ mod test {
                 ),
                 code: None,
                 code_description: None,
-                source: None,
+                source: Some(
+                    "ledger-ls",
+                ),
                 message: "Undefined commodity: $",
                 related_information: None,
                 tags: None,
@@ -1498,7 +1507,9 @@ mod test {
                 ),
                 code: None,
                 code_description: None,
-                source: None,
+                source: Some(
+                    "ledger-ls",
+                ),
                 message: "Undefined account: Account2",
                 related_information: None,
                 tags: None,
@@ -1520,7 +1531,9 @@ mod test {
                 ),
                 code: None,
                 code_description: None,
-                source: None,
+                source: Some(
+                    "ledger-ls",
+                ),
                 message: "Undefined account: Account2",
                 related_information: None,
                 tags: None,
@@ -1542,7 +1555,9 @@ mod test {
                 ),
                 code: None,
                 code_description: None,
-                source: None,
+                source: Some(
+                    "ledger-ls",
+                ),
                 message: "Undefined account: Account2",
                 related_information: None,
                 tags: None,
@@ -1599,7 +1614,9 @@ mod test {
                 ),
                 code: None,
                 code_description: None,
-                source: None,
+                source: Some(
+                    "ledger-ls",
+                ),
                 message: "Undefined tag: Qux",
                 related_information: None,
                 tags: None,
@@ -1621,7 +1638,9 @@ mod test {
                 ),
                 code: None,
                 code_description: None,
-                source: None,
+                source: Some(
+                    "ledger-ls",
+                ),
                 message: "Undefined tag: Zip",
                 related_information: None,
                 tags: None,
@@ -1643,7 +1662,9 @@ mod test {
                 ),
                 code: None,
                 code_description: None,
-                source: None,
+                source: Some(
+                    "ledger-ls",
+                ),
                 message: "Undefined tag: Yurt",
                 related_information: None,
                 tags: None,
