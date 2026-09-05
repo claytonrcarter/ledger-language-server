@@ -10,7 +10,19 @@ and this project adheres to
 
 ### Added
 
+- diagnostics: added diagnostic for too many elided amounts
+- diagnostic: added diagnostics for undefined accounts, commodities, tags and
+  payees; these are configurable, and be similar to ledger's `--strict`,
+  `--pedantic` and `--check-payees` flags
+- config: warnings are now logged when unrecognized config settings are sent to
+  the server
+- hovers: added hovers for payees and commodities
+
 ### Changed
+
+- hovers: account hover now indicates if the account is aliased
+- deps: updated to Rust 2024 edition
+- deps: dependency updates
 
 ### Fixed
 
@@ -20,8 +32,6 @@ and this project adheres to
 
 - added support for "find references" for accounts and payees
 - added support for hovers/popups for accounts
-
-### Changed
 
 ### Fixed
 
