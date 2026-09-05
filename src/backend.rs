@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -233,12 +233,11 @@ impl LedgerBackend {
     /// Parse an input document (source code) and save the parsed Tree for use
     /// later. If the document has already been cached, no new parsing is done.
     pub fn parse_document(&mut self, content: &str) {
-        if !self.trees_cache.contains_key(content) {
-            if let Ok(mut parser) = self.parser() {
-                if let Some(tree) = parser.parse(content, None) {
-                    self.trees_cache.insert(content.to_string(), tree);
-                }
-            }
+        if !self.trees_cache.contains_key(content)
+            && let Ok(mut parser) = self.parser()
+            && let Some(tree) = parser.parse(content, None)
+        {
+            self.trees_cache.insert(content.to_string(), tree);
         }
     }
 

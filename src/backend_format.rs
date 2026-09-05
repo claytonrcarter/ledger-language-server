@@ -1,14 +1,14 @@
 use anyhow::Result;
 use anyhow::{anyhow, bail};
-use ledger::anon_unions::AccountDirective_CharDirective_CommodityDirective_Option_PayeeDirective_TagDirective_WordDirective as Directives;
+use ledger::JournalItem as TS_JournalItem;
 use ledger::anon_unions::Account_Amount_BalanceAssertion_LotPrice_Note_Price_Status as PostingFields;
+use ledger::anon_unions::AccountDirective_CharDirective_CommodityDirective_Option_PayeeDirective_TagDirective_WordDirective as Directives;
 use ledger::anon_unions::AutomatedXact_PeriodicXact_PlainXact as Transactions;
 use ledger::anon_unions::BlockComment_Comment_Directive_Test_Xact as JournalItems;
 use ledger::anon_unions::Code_Date_EffectiveDate_Note_Payee_Posting_Status as XactFields;
 use ledger::anon_unions::Commodity_NegativeQuantity_Quantity as AmountFields;
 use ledger::anon_unions::Interval_Note_Posting as PeriodicXactFields;
 use ledger::anon_unions::Note_Posting_Query as AutomatedXactFields;
-use ledger::JournalItem as TS_JournalItem;
 use type_sitter::{HasChild, HasChildren, HasOptionalChild, Node, Parser, Range, TreeCursor};
 
 use std::cmp::Ordering;
@@ -44,7 +44,7 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String> {
                     let journal_item = match journal_item.child() {
                         Ok(journal_item) => journal_item,
                         Err(_) => {
-                            return JournalItem::Error(substring(content, journal_item.range()))
+                            return JournalItem::Error(substring(content, journal_item.range()));
                         }
                     };
 
@@ -123,7 +123,7 @@ pub fn format(content: &str, sort_transactions: bool) -> Result<String> {
         let mut chunk = SortableChunk::new();
         for journal_item in journal_items.iter() {
             match journal_item {
-                JournalItem::PlainXact(ref t) => {
+                JournalItem::PlainXact(t) => {
                     chunk.items.push(journal_item);
                     chunk.date = t.date.clone();
                     chunks.push(chunk);
