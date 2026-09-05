@@ -1221,29 +1221,52 @@ impl LedgerBackend {
 
                     log::debug!("account: {account}");
 
-                    let is_match = account == current_node_content || {
+                    let is_match_and_alias = if account == current_node_content {
+                        Some(false)
+                    } else {
                         let aliases = get_aliases();
                         log::debug!("aliases: {aliases:?}");
-                        aliases.contains(&current_node_content)
+                        aliases.contains(&current_node_content).then_some(true)
                     };
 
-                    if is_match {
-                        let note = get_note();
-
-                        Some(LedgerHover(Hover {
-                            contents: HoverContents::Scalar(MarkedString::String(
-                                if note.is_empty() {
-                                    format!("`{account}`")
+                    is_match_and_alias
+                        .map(|is_alias| {
+                            if is_alias {
+                                format!("aliased from `{current_node_content}`")
+                            } else {
+                                String::new()
+                            }
+                        })
+                        .map(|alias_content| {
+                            let note_content = get_note();
+                            log::debug!("note_content: {note_content:?}");
+                            log::debug!("alias_content: {alias_content:?}");
+                            let hover_content = format!(
+                                "`{account}`{hr}{note}{br}{alias_content}",
+                                hr = if !note_content.is_empty() || !alias_content.is_empty() {
+                                    "\n***"
                                 } else {
-                                    format!("`{account}`\n***\n*{note}*")
+                                    ""
                                 },
-                            )),
-                            range: None,
-                        }))
-                    } else {
-                        // don't include current node content
-                        None
-                    }
+                                note = if !note_content.is_empty() {
+                                    format!("\n*{note_content}*")
+                                } else {
+                                    String::new()
+                                },
+                                br = match (note_content.is_empty(), alias_content.is_empty()) {
+                                    (true, true) => "",
+                                    (true, false) => "\n",
+                                    (false, true) => "",
+                                    (false, false) => "  \n",
+                                },
+                            );
+                            LedgerHover(Hover {
+                                contents: HoverContents::Scalar(MarkedString::String(
+                                    hover_content,
+                                )),
+                                range: None,
+                            })
+                        })
                 },
                 visited,
             )?,
@@ -3421,7 +3444,7 @@ mod test {
                         Hover {
                             contents: Scalar(
                                 String(
-                                    "`Account1`",
+                                    "`Account1`\n***\naliased from `Act1`",
                                 ),
                             ),
                             range: None,
@@ -3472,7 +3495,7 @@ mod test {
                         Hover {
                             contents: Scalar(
                                 String(
-                                    "`Account1`\n***\n*This is account 1*",
+                                    "`Account1`\n***\n*This is account 1*  \naliased from `Act1`",
                                 ),
                             ),
                             range: None,
@@ -3523,7 +3546,7 @@ mod test {
                         Hover {
                             contents: Scalar(
                                 String(
-                                    "`Account1`\n***\n*This is account 1*",
+                                    "`Account1`\n***\n*This is account 1*  \naliased from `Act1`",
                                 ),
                             ),
                             range: None,
@@ -3577,7 +3600,7 @@ mod test {
                         Hover {
                             contents: Scalar(
                                 String(
-                                    "`Account1`",
+                                    "`Account1`\n***\naliased from `Act1`",
                                 ),
                             ),
                             range: None,
@@ -3615,7 +3638,7 @@ mod test {
                         Hover {
                             contents: Scalar(
                                 String(
-                                    "`Account1`",
+                                    "`Account1`\n***\naliased from `Acct1`",
                                 ),
                             ),
                             range: None,
