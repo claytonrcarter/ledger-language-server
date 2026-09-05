@@ -336,6 +336,7 @@ impl LedgerBackend {
                 &mut completions,
                 buffer_path,
                 "(account) @account",
+                1,
                 content,
                 &|_node, account, _, _, _| {
                     if account != current_node_content {
@@ -386,6 +387,7 @@ impl LedgerBackend {
                 &mut completions,
                 buffer_path,
                 "(payee) @payee",
+                1,
                 content,
                 &|_node, payee, _, _, _| {
                     if payee != current_node_content {
@@ -410,6 +412,7 @@ impl LedgerBackend {
                     &mut completions,
                     buffer_path,
                     "(note) @note",
+                    1,
                     content,
                     &|_node, note, _, _, _| {
                         if note == current_node_content {
@@ -494,11 +497,13 @@ impl LedgerBackend {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn filter_nodes<F, I, T>(
         &mut self,
         results: &mut HashSet<T>,
         buffer_path: &Path,
         query: &str,
+        primary_capture_index: u32,
         buffer_contents: &str,
         filter_fn: &F,
         visited: &mut HashSet<PathBuf>,
@@ -545,7 +550,7 @@ impl LedgerBackend {
         let mut matches = cursor.matches(&ts_query, tree.root_node(), source);
         while let Some(m) = matches.next() {
             // query as passed in
-            for node in m.nodes_for_capture_index(1) {
+            for node in m.nodes_for_capture_index(primary_capture_index) {
                 let capture_text = substring(source, node.start_byte(), node.end_byte())?;
                 results.extend(filter_fn(
                     &node,
@@ -584,7 +589,15 @@ impl LedgerBackend {
 
                 self.parse_document(&included_content);
 
-                self.filter_nodes(results, &path, query, &included_content, filter_fn, visited)?;
+                self.filter_nodes(
+                    results,
+                    &path,
+                    query,
+                    primary_capture_index,
+                    &included_content,
+                    filter_fn,
+                    visited,
+                )?;
             }
         }
 
@@ -707,6 +720,173 @@ impl LedgerBackend {
     }
 
     pub fn diagnostics(&mut self, buffer_path: &Path, content: &str) -> Vec<Diagnostic> {
+        self.diagnostics_elided_amounts(buffer_path, content)
+            .into_iter()
+            .chain(self.diagnostics_undefined_values(buffer_path, content))
+            .chain(self.diagnostics_includes(buffer_path, content))
+            .collect()
+    }
+
+    pub fn diagnostics_undefined_values(
+        &mut self,
+        buffer_path: &Path,
+        content: &str,
+    ) -> Vec<Diagnostic> {
+        #[derive(Debug, Eq, PartialEq, Hash)]
+        enum DefinedValue {
+            Account(String),
+            Commodity(String),
+            Payee(String),
+            Tag(String),
+        }
+
+        // collect defined accounts and payees
+        let (defined_values, mut visited) = {
+            let mut defined_values: HashSet<DefinedValue> = HashSet::new();
+            let mut visited: HashSet<PathBuf> = HashSet::new();
+            let query = "
+            (directive
+               	[
+                	(account_directive (account) @account
+                        (account_subdirective (alias_subdirective) @alias)*
+                    )
+                    (payee_directive (payee) @payee)
+                    (commodity_directive (commodity) @commodity)
+                    (tag_directive) @tag
+                ]
+            ) @directive
+            ";
+
+            let Ok(()) = self.filter_nodes(
+                &mut defined_values,
+                buffer_path,
+                query,
+                6, // @directive
+                content,
+                &|_node, _node_content, _buffer_path, buffer_contents, matches| {
+                    #[allow(clippy::type_complexity)]
+                    let captures: [(fn(String) -> DefinedValue, &str); 5] = [
+                        // must be in same order as captures, above
+                        (DefinedValue::Account, ""),
+                        (DefinedValue::Account, "alias "),
+                        (DefinedValue::Payee, ""),
+                        (DefinedValue::Commodity, ""),
+                        (DefinedValue::Tag, "tag "),
+                    ];
+
+                    (1u32..)
+                        .zip(captures)
+                        .flat_map(|(i, (make, prefix))| {
+                            matches.nodes_for_capture_index(i).filter_map(move |node| {
+                                substring(
+                                    buffer_contents.as_bytes(),
+                                    node.start_byte(),
+                                    node.end_byte(),
+                                )
+                                .ok()
+                                .and_then(|s| {
+                                    if !prefix.is_empty() {
+                                        s.strip_prefix(prefix).map(str::trim).map(str::to_string)
+                                    } else {
+                                        Some(s)
+                                    }
+                                })
+                                .map(make)
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                },
+                &mut visited,
+            ) else {
+                return Vec::new();
+            };
+
+            (defined_values, visited)
+        };
+
+        #[derive(Eq, PartialEq, Hash)]
+        struct TempDiagnostic((Range, String));
+        let mut diagnostics: HashSet<TempDiagnostic> = HashSet::new();
+        let query = "
+            (plain_xact
+              (payee)? @payee
+              (posting
+                (account) @account
+                (amount (commodity) @commodity)?
+              )*
+            ) @xact
+            ";
+
+        let Ok(()) = self.filter_nodes(
+            &mut diagnostics,
+            buffer_path,
+            query,
+            3, // @xact
+            content,
+            &|_node, _node_content, _buffer_path, buffer_contents, matches| {
+                #[allow(clippy::type_complexity)]
+                let captures: [(&str, fn(String) -> DefinedValue, bool); 3] = [
+                    // must be in same order as captures, above
+                    ("payee", DefinedValue::Payee, false),
+                    ("account", DefinedValue::Account, true),
+                    ("commodity", DefinedValue::Commodity, true),
+                ];
+
+                let defined_values = &defined_values;
+                (1u32..)
+                    .zip(captures)
+                    .filter(|(_, (_, _, should_report))| *should_report)
+                    .flat_map(|(i, (name, make, _))| {
+                        matches.nodes_for_capture_index(i).filter_map(move |node| {
+                            substring(
+                                buffer_contents.as_bytes(),
+                                node.start_byte(),
+                                node.end_byte(),
+                            )
+                            .ok()
+                            .and_then(|value| {
+                                let value = if node.kind() == "account" {
+                                    value.trim_matches(['[', ']', '(', ')'])
+                                } else {
+                                    &value
+                                };
+                                if defined_values.contains(&make(value.to_string())) {
+                                    None
+                                } else {
+                                    Some(TempDiagnostic((
+                                        node.range(),
+                                        format!("Undefined {name}: {value}"),
+                                    )))
+                                }
+                            })
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            },
+            // HACK: reusing visited prevents filter_nodes() from crawling into
+            // (and diagnosing) included files
+            &mut visited,
+        ) else {
+            return Vec::new();
+        };
+
+        diagnostics
+            .into_iter()
+            .map(|TempDiagnostic((range, message))| {
+                let mut diag = Diagnostic::new_simple(lsp_range_from_ts_range(range), message);
+                // TODO: provide config to change severity, none if off, warning if strict, error if pedantic
+                diag.severity = Some(DiagnosticSeverity::WARNING);
+                // diag.source = Some("ledger-ls".to_string());
+                diag
+            })
+            .collect()
+    }
+
+    pub fn diagnostics_elided_amounts(
+        &mut self,
+        buffer_path: &Path,
+        content: &str,
+    ) -> Vec<Diagnostic> {
         #[derive(Eq, PartialEq, Hash)]
         struct TempDiagnostic((Range, String));
         let mut diagnostics: HashSet<TempDiagnostic> = HashSet::new();
@@ -718,6 +898,7 @@ impl LedgerBackend {
             &mut diagnostics,
             buffer_path,
             query,
+            1,
             content,
             &|node, _node_content, _buffer_path, _buffer_contents, _matches| {
                 let mut cursor = node.walk();
@@ -754,7 +935,6 @@ impl LedgerBackend {
             .map(|TempDiagnostic((range, message))| {
                 Diagnostic::new_simple(lsp_range_from_ts_range(range), message)
             })
-            .chain(self.diagnostics_includes(buffer_path, content))
             .collect()
     }
 
@@ -870,6 +1050,7 @@ impl LedgerBackend {
             &mut locations,
             buffer_path,
             query,
+            1,
             content,
             &|node, node_content, buffer_path, _, _| {
                 if node_content == current_node_content {
@@ -946,6 +1127,7 @@ impl LedgerBackend {
                     (account_subdirective (alias_subdirective) @alias)*
                 )
                 ",
+                1,
                 content,
                 &|_node, account, _buffer_path, buffer_contents, matches| {
                     // capture indices:
@@ -1133,16 +1315,19 @@ mod test {
     fn test_diagnostics_elided_amounts() {
         let source = textwrap::dedent(
             "
-            2024/01/02 Payee1
-                Account1  $1 ; 1 elided amount
-                Account1
+            account Account
+            payee Payee
+
+            2024/01/02 Payee
+                Account  1 ; 1 elided amount
+                Account
 
             2024/01/02 Payee
                 Account  ; 2 elided amounts
                 Account
 
             2024/01/02 Payee
-                Account  = $1 ; balance assertion counts as amount
+                Account  = 1 ; balance assertion counts as amount
                 Account
             ",
         );
@@ -1155,11 +1340,11 @@ mod test {
             Diagnostic {
                 range: Range {
                     start: Position {
-                        line: 5,
+                        line: 8,
                         character: 0,
                     },
                     end: Position {
-                        line: 8,
+                        line: 11,
                         character: 0,
                     },
                 },
@@ -1168,6 +1353,121 @@ mod test {
                 code_description: None,
                 source: None,
                 message: "Only 1 elided amount allowed per transaction. Found 2.",
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+        ]
+        "#
+        );
+    }
+    #[test]
+    fn test_diagnostics_undefined_values() {
+        let source = textwrap::dedent(
+            "
+            account Account1
+                alias Acct1
+
+            2024/01/02 Payee1
+                Account1    $1
+                (Account1)  1
+                [Account1]  1
+                Account2    1
+                (Account2)  1
+                [Account2]  1
+                Acct1
+            ",
+        );
+
+        let diagnostics = get_diagnostics(&source, None);
+
+        insta::assert_debug_snapshot!(diagnostics,
+            @r#"
+        [
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 5,
+                        character: 16,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 17,
+                    },
+                },
+                severity: Some(
+                    Warning,
+                ),
+                code: None,
+                code_description: None,
+                source: None,
+                message: "Undefined commodity: $",
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 8,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 8,
+                        character: 12,
+                    },
+                },
+                severity: Some(
+                    Warning,
+                ),
+                code: None,
+                code_description: None,
+                source: None,
+                message: "Undefined account: Account2",
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 9,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 9,
+                        character: 14,
+                    },
+                },
+                severity: Some(
+                    Warning,
+                ),
+                code: None,
+                code_description: None,
+                source: None,
+                message: "Undefined account: Account2",
+                related_information: None,
+                tags: None,
+                data: None,
+            },
+            Diagnostic {
+                range: Range {
+                    start: Position {
+                        line: 10,
+                        character: 4,
+                    },
+                    end: Position {
+                        line: 10,
+                        character: 14,
+                    },
+                },
+                severity: Some(
+                    Warning,
+                ),
+                code: None,
+                code_description: None,
+                source: None,
+                message: "Undefined account: Account2",
                 related_information: None,
                 tags: None,
                 data: None,
@@ -3534,7 +3834,9 @@ mod test {
             be
         });
 
-        backend.diagnostics(Path::new("unused in test"), &source)
+        let mut diagnostics = backend.diagnostics(Path::new("unused in test"), &source);
+        diagnostics.sort_by(|a, b| a.range.start.cmp(&b.range.start));
+        diagnostics
     }
 
     fn get_completions(
