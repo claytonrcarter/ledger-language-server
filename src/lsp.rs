@@ -992,13 +992,13 @@ mod test {
             .await?;
 
         insta::assert_debug_snapshot!(response.capabilities.code_action_provider,
-            @r#"
+            @"
             Some(
                 Simple(
                     true,
                 ),
             )
-            "#
+            "
         );
 
         insta::assert_debug_snapshot!(response.capabilities.completion_provider,
@@ -1024,23 +1024,23 @@ mod test {
         );
 
         insta::assert_debug_snapshot!(response.capabilities.document_formatting_provider,
-            @r#"
+            @"
             Some(
                 Left(
                     true,
                 ),
             )
-            "#
+            "
         );
 
         insta::assert_debug_snapshot!(response.capabilities.definition_provider,
-            @r#"
+            @"
             Some(
                 Left(
                     true,
                 ),
             )
-            "#
+            "
         );
 
         insta::assert_debug_snapshot!(response.capabilities.text_document_sync,
@@ -1068,7 +1068,7 @@ mod test {
         );
 
         insta::assert_debug_snapshot!(response.capabilities.workspace,
-            @r#"
+            @"
             Some(
                 WorkspaceServerCapabilities {
                     workspace_folders: Some(
@@ -1086,7 +1086,7 @@ mod test {
                     file_operations: None,
                 },
             )
-            "#
+            "
         );
 
         Ok(())
@@ -1108,7 +1108,7 @@ mod test {
             .request::<lsp_types::InitializeResult>(&request)
             .await?;
 
-        insta::assert_debug_snapshot!(response.capabilities.document_formatting_provider, @r"None");
+        insta::assert_debug_snapshot!(response.capabilities.document_formatting_provider, @"None");
 
         Ok(())
     }
@@ -1386,7 +1386,7 @@ mod test {
                         ],
                     ),
                 ]
-                "#
+            "#
         );
 
         Ok(())
@@ -1707,9 +1707,7 @@ mod test {
                 })
                 .collect::<Vec<_>>();
             insta::assert_debug_snapshot!(completions,
-                @r#"
-                []
-                "#
+                @"[]"
             );
         }
 
@@ -1743,9 +1741,7 @@ mod test {
                 })
                 .collect::<Vec<_>>();
             insta::assert_debug_snapshot!(completions,
-                @r#"
-                []
-                "#
+                @"[]"
             );
         }
 
@@ -1790,7 +1786,7 @@ mod test {
             references.sort_by(|a, b| a.start.line.cmp(&b.start.line));
 
             insta::assert_debug_snapshot!(references,
-                @r#"
+                @"
             [
                 Range {
                     start: Position {
@@ -1823,7 +1819,7 @@ mod test {
                     },
                 },
             ]
-            "#
+            "
             );
         }
 
@@ -1839,7 +1835,7 @@ mod test {
             references.sort_by(|a, b| a.start.line.cmp(&b.start.line));
 
             insta::assert_debug_snapshot!(references,
-                @r#"
+                @"
             [
                 Range {
                     start: Position {
@@ -1862,7 +1858,7 @@ mod test {
                     },
                 },
             ]
-            "#
+            "
             );
         }
 
@@ -1878,7 +1874,7 @@ mod test {
             references.sort_by(|a, b| a.start.line.cmp(&b.start.line));
 
             insta::assert_debug_snapshot!(references,
-                @r#"
+                @"
             [
                 Range {
                     start: Position {
@@ -1901,7 +1897,7 @@ mod test {
                     },
                 },
             ]
-            "#
+            "
             );
         }
 
@@ -1917,7 +1913,7 @@ mod test {
             references.sort_by(|a, b| a.start.line.cmp(&b.start.line));
 
             insta::assert_debug_snapshot!(references,
-                @r#"
+                @"
             [
                 Range {
                     start: Position {
@@ -1930,7 +1926,7 @@ mod test {
                     },
                 },
             ]
-            "#
+            "
             );
         }
 
@@ -1946,7 +1942,7 @@ mod test {
             references.sort_by(|a, b| a.start.line.cmp(&b.start.line));
 
             insta::assert_debug_snapshot!(references,
-                @r#"
+                @"
             [
                 Range {
                     start: Position {
@@ -1969,7 +1965,7 @@ mod test {
                     },
                 },
             ]
-            "#
+            "
             );
         }
 

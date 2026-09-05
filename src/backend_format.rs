@@ -924,7 +924,7 @@ fn format_transaction() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         2018/10/01 (123) Payee 123
             TEST:ABC 123                               $1.20
             ! TEST:DEF 123                             $2.30
@@ -946,7 +946,7 @@ fn format_amounts() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         2018/10/01 Payee 123
             ABC                                        $1.20
             DEF                                       $-2.30
@@ -967,7 +967,7 @@ fn format_transaction_with_looooong_account_name() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         2018/10/01 Payee 123
             TEST:LoremIpsumDolorSitAmetConsecteturAdipiscingElit  $1.20
             TEST:DEF 123
@@ -987,11 +987,11 @@ fn format_periodic_transaction() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r#"
+        @"
         ~ Monthly
             Account 1                                  $1.20
             Account 2
-        "#
+        "
     );
 }
 
@@ -1006,11 +1006,11 @@ fn format_automated_transaction() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r#"
+        @"
         = Expenses:.*
             (Account:Foo)                               0.67
             (Account:Bar)                               0.33
-        "#
+        "
     );
 }
 
@@ -1030,7 +1030,7 @@ fn format_transaction_notes() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         2018/10/01 Payee ; note 1
             ; note 2
             ; note 3
@@ -1054,7 +1054,7 @@ fn format_payee_with_special_chars() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         2018/10/01 * (123) Payee* !123
             TEST:ABC 123                               $1.20
             TEST:DEF 123
@@ -1074,7 +1074,7 @@ fn format_effective_dates() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         2018/10/01=2011/02/03 Payee
             TEST:ABC 123                               $1.20
             TEST:DEF 123
@@ -1094,7 +1094,7 @@ fn format_balance_assertions() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         2018/10/01 Payee
             TEST:ABC 123                        $1.20 = $123
             TEST:DEF 123                              = $456
@@ -1117,7 +1117,7 @@ fn format_prices() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         2023/11/21
             Produce:Sweet Potatoes       -80 {$2.40} @@ $192
             Assets:Accounts Recievable
@@ -1143,7 +1143,7 @@ fn format_directives() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         include foo.ledger
 
         account Foo
@@ -1167,7 +1167,7 @@ fn format_payee_directives() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         payee Foo Bar
             ; comment 1
             alias FooBar
@@ -1197,7 +1197,7 @@ fn format_directives_grouping() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         account Uncategorized
 
         tag Memo
@@ -1240,7 +1240,7 @@ fn format_grouping_journal_items() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         ; comment 1
         ; comment 2
 
@@ -1282,7 +1282,7 @@ fn format_journal() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r#"
+        @"
         ; comment 1
         include foo.ledger
 
@@ -1295,7 +1295,7 @@ fn format_journal() {
         2023/12/22 Name
             Account1:Foo                                 -10
             Account2
-        "#
+        "
     );
 }
 
@@ -1316,7 +1316,7 @@ fn format_normalize_dates() {
 
     insta::assert_snapshot!(
         format(&source, false).unwrap(),
-        @r"
+        @"
         2018/10/01 Payee
             Account
 
@@ -1357,7 +1357,7 @@ fn format_sorted_transactions() {
 
     insta::assert_snapshot!(
         format(&source, true).unwrap(),
-        @r#"
+        @"
         ; foo comment
 
         ; bar comment
@@ -1377,7 +1377,7 @@ fn format_sorted_transactions() {
         2018/01/03 Payee 3
             Account1                                   $1.23
             Account2
-        "#
+        "
     );
 }
 
@@ -1398,7 +1398,7 @@ fn format_error_nodes() {
 
     insta::assert_snapshot!(
         format(&source, true).unwrap(),
-        @r#"
+        @"
         invalid   directive
         include foo.ledger
         111 Payee
@@ -1407,6 +1407,6 @@ fn format_error_nodes() {
           Account  12/3/4 ; invalid qty
         11/1/1 Payee
             Account                                       $1
-        "#
+        "
     );
 }
