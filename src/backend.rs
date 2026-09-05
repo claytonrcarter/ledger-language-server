@@ -1780,7 +1780,7 @@ mod test {
             None,
         );
 
-        insta::assert_debug_snapshot!(diagnostics, @r"[]");
+        insta::assert_debug_snapshot!(diagnostics, @"[]");
     }
 
     #[test]
@@ -2136,7 +2136,7 @@ mod test {
         );
 
         insta::assert_debug_snapshot!(completions.0,
-        @r#"
+        @"
         Range {
             start: Position {
                 line: 0,
@@ -2147,7 +2147,7 @@ mod test {
                 character: 2,
             },
         }
-        "#
+        "
         );
         assert!(completions.1.len() > 0);
         if let LedgerCompletion::Period(_) = completions.1[0] {
@@ -2171,7 +2171,7 @@ mod test {
         );
 
         insta::assert_debug_snapshot!(completions.0,
-        @r#"
+        @"
         Range {
             start: Position {
                 line: 0,
@@ -2182,7 +2182,7 @@ mod test {
                 character: 9,
             },
         }
-        "#
+        "
         );
         assert!(completions.1.len() > 0);
         if let LedgerCompletion::Period(_) = completions.1[0] {
@@ -2206,7 +2206,7 @@ mod test {
         );
 
         insta::assert_debug_snapshot!(completions.0,
-        @r#"
+        @"
         Range {
             start: Position {
                 line: 0,
@@ -2217,7 +2217,7 @@ mod test {
                 character: 13,
             },
         }
-        "#
+        "
         );
         assert!(completions.1.len() > 0);
         if let LedgerCompletion::Period(_) = completions.1[0] {
@@ -2246,7 +2246,7 @@ mod test {
         );
 
         insta::assert_debug_snapshot!(completions.0,
-        @r#"
+        @"
         Range {
             start: Position {
                 line: 1,
@@ -2257,7 +2257,7 @@ mod test {
                 character: 4,
             },
         }
-        "#
+        "
         );
     }
 
@@ -2825,7 +2825,7 @@ mod test {
         );
 
         insta::assert_debug_snapshot!(completions,
-        @r###"
+        @r#"
         (
             Range {
                 start: Position {
@@ -2870,7 +2870,7 @@ mod test {
                 },
             ],
         )
-        "###
+        "#
         );
     }
 
@@ -2904,7 +2904,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(completions,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -2964,7 +2964,7 @@ mod test {
                     },
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -2981,7 +2981,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(completions,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3026,7 +3026,7 @@ mod test {
                     },
                 ],
             )
-            "###
+            "#
             );
         }
     }
@@ -3076,7 +3076,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(completions,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3136,7 +3136,7 @@ mod test {
                     },
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3153,7 +3153,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(completions,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3213,7 +3213,7 @@ mod test {
                     },
                 ],
             )
-            "###
+            "#
             );
         }
     }
@@ -3242,7 +3242,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(completions,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3287,7 +3287,7 @@ mod test {
                     },
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3304,7 +3304,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(completions,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3334,7 +3334,7 @@ mod test {
                     },
                 ],
             )
-            "###
+            "#
             );
         }
     }
@@ -3363,7 +3363,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3388,7 +3388,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3413,7 +3413,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3438,7 +3438,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3463,7 +3463,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3488,7 +3488,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3514,7 +3514,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3539,7 +3539,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3565,7 +3565,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3590,7 +3590,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3619,7 +3619,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3644,7 +3644,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
 
             let hovers = get_hovers(
@@ -3657,7 +3657,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3682,7 +3682,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
     }
@@ -3711,7 +3711,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3736,7 +3736,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3761,7 +3761,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3786,7 +3786,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3811,7 +3811,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3836,7 +3836,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3862,7 +3862,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3887,7 +3887,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3913,7 +3913,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3938,7 +3938,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -3967,7 +3967,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -3992,7 +3992,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
 
             let hovers = get_hovers(
@@ -4005,7 +4005,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -4030,7 +4030,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -4060,7 +4060,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -4085,7 +4085,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
 
             let hovers = get_hovers(
@@ -4098,7 +4098,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -4123,7 +4123,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
     }
@@ -4152,7 +4152,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -4177,7 +4177,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -4202,7 +4202,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -4227,7 +4227,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
 
@@ -4259,7 +4259,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -4284,7 +4284,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
 
             let hovers = get_hovers(
@@ -4297,7 +4297,7 @@ mod test {
             );
 
             insta::assert_debug_snapshot!(hovers,
-            @r###"
+            @r#"
             (
                 Range {
                     start: Position {
@@ -4322,7 +4322,7 @@ mod test {
                     ),
                 ],
             )
-            "###
+            "#
             );
         }
     }
@@ -4340,13 +4340,12 @@ mod test {
         );
 
         insta::assert_snapshot!(LedgerBackend::format(&source, false).unwrap(),
-        @r"
+        @"
         2023/09/28 (743) Check Withdrawal
             ; Memo: CHK#743
             SVFCU:Personal                          $-160.00
             SVFCU:Personal                           $-16.00
             Expenses:Uncategorized
-
         ",
         );
     }
@@ -4378,7 +4377,7 @@ mod test {
         )?;
 
         insta::assert_debug_snapshot!(status,
-        @r#"
+        @"
         Some(
             NotCleared(
                 Position {
@@ -4387,7 +4386,7 @@ mod test {
                 },
             ),
         )
-        "#
+        "
         );
 
         let status = backend.transaction_at_position_status(
@@ -4399,7 +4398,7 @@ mod test {
         )?;
 
         insta::assert_debug_snapshot!(status,
-        @r#"
+        @"
         Some(
             Pending(
                 Range {
@@ -4414,7 +4413,7 @@ mod test {
                 },
             ),
         )
-        "#
+        "
         );
 
         let status = backend.transaction_at_position_status(
@@ -4426,7 +4425,7 @@ mod test {
         )?;
 
         insta::assert_debug_snapshot!(status,
-        @r#"
+        @"
         Some(
             Cleared(
                 Range {
@@ -4441,7 +4440,7 @@ mod test {
                 },
             ),
         )
-        "#
+        "
         );
 
         Ok(())
@@ -4480,7 +4479,7 @@ mod test {
         )?;
 
         insta::assert_debug_snapshot!(status,
-        @r#"
+        @"
         Some(
             NotCleared(
                 Position {
@@ -4489,7 +4488,7 @@ mod test {
                 },
             ),
         )
-        "#
+        "
         );
 
         Ok(())
@@ -4520,7 +4519,7 @@ mod test {
         let ranges = backend.pending_transaction_status_ranges(&source)?;
 
         insta::assert_debug_snapshot!(ranges,
-        @r#"
+        @"
         [
             Range {
                 start: Position {
@@ -4543,7 +4542,7 @@ mod test {
                 },
             },
         ]
-        "#
+        "
         );
 
         Ok(())
