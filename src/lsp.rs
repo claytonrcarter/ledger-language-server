@@ -1,6 +1,6 @@
 use crate::backend::{
-    LedgerBackend, LedgerCompletion, LedgerLocation, LedgerRange, LocationBasedResult,
-    TransactionStatus,
+    DiagnosticsParams, LedgerBackend, LedgerCompletion, LedgerLocation, LedgerRange,
+    LocationBasedResult, TransactionStatus,
 };
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -46,6 +46,8 @@ pub struct LspState {
 pub struct Config {
     pub format: bool,
     pub format_sort_transactions: bool,
+    pub check_level: CheckLevel,
+    pub check_payees: bool,
 }
 
 impl Default for Config {
@@ -53,8 +55,18 @@ impl Default for Config {
         Self {
             format: true,
             format_sort_transactions: true,
+            check_level: CheckLevel::default(),
+            check_payees: false,
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+pub enum CheckLevel {
+    Off,
+    #[default]
+    Strict,
+    Pedantic,
 }
 
 pub struct Lsp {
@@ -146,6 +158,47 @@ impl LanguageServer for Lsp {
                 }
                 Some(_) => {
                     log!(self, WARNING, "[initialize:config] unrecognized value for lsp setting 'sort_transactions'. Expected one of `true` or `false`.");
+                }
+                None => {}
+            }
+
+            let warning = "[initialize:config] unrecognized value for lsp setting 'check_level'. Expected one of `off`, `strict` or `pedantic`.";
+            match opts.get("check_level") {
+                Some(Value::String(s)) => {
+                    let level = match s.as_str() {
+                        "strict" => Some(CheckLevel::Strict),
+                        "pedantic" => Some(CheckLevel::Pedantic),
+                        "off" => Some(CheckLevel::Off),
+                        s => {
+                            log!(self, WARNING, "{warning} Got '{s}'");
+                            None
+                        }
+                    };
+                    if let Some(level) = level {
+                        state.config.check_level = level;
+                    }
+                }
+                // not documented, but easy enough to support in case someone
+                // assumes that `check_level: false` could work
+                Some(Value::Bool(enable)) => {
+                    state.config.check_level = if *enable {
+                        CheckLevel::default()
+                    } else {
+                        CheckLevel::Off
+                    };
+                }
+                Some(_) => {
+                    log!(self, WARNING, "{warning}");
+                }
+                None => {}
+            }
+
+            match opts.get("check_payees") {
+                Some(Value::Bool(should_sort)) => {
+                    state.config.check_payees = *should_sort;
+                }
+                Some(_) => {
+                    log!(self, WARNING, "[initialize:config] unrecognized value for lsp setting 'check_payees'. Expected one of `true` or `false`.");
                 }
                 None => {}
             }
@@ -247,10 +300,16 @@ impl LanguageServer for Lsp {
             .insert(path.clone(), params.text_document.text.clone());
         state.backend.parse_document(&params.text_document.text);
 
+        let diag_params = DiagnosticsParams {
+            check_level: state.config.check_level,
+            check_payees: state.config.check_payees,
+        };
         self.client
             .publish_diagnostics(
                 params.text_document.uri.clone(),
-                state.backend.diagnostics(&path, &params.text_document.text),
+                state
+                    .backend
+                    .diagnostics(&path, &params.text_document.text, &diag_params),
                 None,
             )
             .await;
@@ -303,10 +362,14 @@ impl LanguageServer for Lsp {
         // ... then we could update both
         let mut state = self.state.lock().await;
         if let Some(content) = state.sources.get(&path).cloned() {
+            let diag_params = DiagnosticsParams {
+                check_level: state.config.check_level,
+                check_payees: state.config.check_payees,
+            };
             self.client
                 .publish_diagnostics(
                     params.text_document.uri.clone(),
-                    state.backend.diagnostics(&path, &content),
+                    state.backend.diagnostics(&path, &content, &diag_params),
                     None,
                 )
                 .await;

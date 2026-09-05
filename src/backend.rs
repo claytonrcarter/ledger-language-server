@@ -10,6 +10,7 @@ use tree_sitter::{Language, Node, Parser, Point, QueryMatch, Range, Tree};
 use type_sitter::StreamingIterator;
 use walkdir::WalkDir;
 
+use crate::lsp::CheckLevel;
 use crate::{backend_format, contents_of_path};
 
 // Match `tag: value` and `:tag:`; ledger tags don't contain whitespace, and value tags
@@ -197,6 +198,11 @@ pub enum TransactionStatus {
     // Range is where the current status is, including trailing whitespace, before code or payee.
     Pending(LspRange),
     Cleared(LspRange),
+}
+
+pub struct DiagnosticsParams {
+    pub check_level: CheckLevel,
+    pub check_payees: bool,
 }
 
 #[derive(Clone)]
@@ -741,10 +747,15 @@ impl LedgerBackend {
         }));
     }
 
-    pub fn diagnostics(&mut self, buffer_path: &Path, content: &str) -> Vec<Diagnostic> {
+    pub fn diagnostics(
+        &mut self,
+        buffer_path: &Path,
+        content: &str,
+        params: &DiagnosticsParams,
+    ) -> Vec<Diagnostic> {
         self.diagnostics_elided_amounts(buffer_path, content)
             .into_iter()
-            .chain(self.diagnostics_undefined_values(buffer_path, content))
+            .chain(self.diagnostics_undefined_values(buffer_path, content, params))
             .chain(self.diagnostics_includes(buffer_path, content))
             .collect()
     }
@@ -753,7 +764,13 @@ impl LedgerBackend {
         &mut self,
         buffer_path: &Path,
         content: &str,
+        params: &DiagnosticsParams,
     ) -> Vec<Diagnostic> {
+        let DiagnosticsParams {
+            check_level,
+            check_payees,
+        } = params;
+
         #[derive(Debug, Eq, PartialEq, Hash)]
         enum DefinedValue {
             Account(String),
@@ -761,6 +778,12 @@ impl LedgerBackend {
             Payee(String),
             Tag(String),
         }
+
+        let severity = match check_level {
+            CheckLevel::Off => return Vec::new(),
+            CheckLevel::Strict => DiagnosticSeverity::WARNING,
+            CheckLevel::Pedantic => DiagnosticSeverity::ERROR,
+        };
 
         // collect defined accounts and payees
         let (defined_values, mut visited) = {
@@ -854,7 +877,7 @@ impl LedgerBackend {
                 let captures: [(&str, fn(String) -> DefinedValue, bool); 4] = [
                     // must be in same order as captures, above; do not need to
                     // match capture names
-                    ("payee", DefinedValue::Payee, false),
+                    ("payee", DefinedValue::Payee, *check_payees),
                     ("account", DefinedValue::Account, true),
                     ("commodity", DefinedValue::Commodity, true),
                     ("tag", DefinedValue::Tag, true),
@@ -913,7 +936,7 @@ impl LedgerBackend {
             .map(|TempDiagnostic((range, message))| {
                 let mut diag = Diagnostic::new_simple(lsp_range_from_ts_range(range), message);
                 // TODO: provide config to change severity, none if off, warning if strict, error if pedantic
-                diag.severity = Some(DiagnosticSeverity::WARNING);
+                diag.severity = Some(severity);
                 // diag.source = Some("ledger-ls".to_string());
                 diag
             })
@@ -1370,7 +1393,14 @@ mod test {
             ",
         );
 
-        let diagnostics = get_diagnostics(&source, None);
+        let diagnostics = get_diagnostics(
+            &source,
+            DiagnosticsParams {
+                check_level: CheckLevel::Strict,
+                check_payees: false,
+            },
+            None,
+        );
 
         insta::assert_debug_snapshot!(diagnostics,
             @r#"
@@ -1418,7 +1448,14 @@ mod test {
             ",
         );
 
-        let diagnostics = get_diagnostics(&source, None);
+        let diagnostics = get_diagnostics(
+            &source,
+            DiagnosticsParams {
+                check_level: CheckLevel::Strict,
+                check_payees: false,
+            },
+            None,
+        );
 
         insta::assert_debug_snapshot!(diagnostics,
             @r#"
@@ -1534,7 +1571,14 @@ mod test {
             ",
         );
 
-        let diagnostics = get_diagnostics(&source, None);
+        let diagnostics = get_diagnostics(
+            &source,
+            DiagnosticsParams {
+                check_level: CheckLevel::Strict,
+                check_payees: false,
+            },
+            None,
+        );
 
         insta::assert_debug_snapshot!(diagnostics,
             @r#"
@@ -3959,7 +4003,11 @@ mod test {
     //
     //
     //
-    fn get_diagnostics(source: &str, backend: Option<LedgerBackend>) -> Vec<Diagnostic> {
+    fn get_diagnostics(
+        source: &str,
+        params: DiagnosticsParams,
+        backend: Option<LedgerBackend>,
+    ) -> Vec<Diagnostic> {
         let mut backend = backend.unwrap_or_else(|| {
             let mut be = LedgerBackend::new();
             be._test_project_files = Some(vec![]);
@@ -3967,7 +4015,7 @@ mod test {
             be
         });
 
-        let mut diagnostics = backend.diagnostics(Path::new("unused in test"), &source);
+        let mut diagnostics = backend.diagnostics(Path::new("unused in test"), &source, &params);
         diagnostics.sort_by(|a, b| a.range.start.cmp(&b.range.start));
         diagnostics
     }
