@@ -250,7 +250,7 @@ impl LanguageServer for Lsp {
         self.client
             .publish_diagnostics(
                 params.text_document.uri.clone(),
-                LedgerBackend::diagnostics(&path, &params.text_document.text),
+                state.backend.diagnostics(&path, &params.text_document.text),
                 None,
             )
             .await;
@@ -301,12 +301,12 @@ impl LanguageServer for Lsp {
         // the file contents (params don't have access to updated buffer contents)
         // TODO figure out how to send TextDocumentSaveRegistrationOptions{include_text: Some(true)}
         // ... then we could update both
-        let state = self.state.lock().await;
+        let mut state = self.state.lock().await;
         if let Some(content) = state.sources.get(&path).cloned() {
             self.client
                 .publish_diagnostics(
                     params.text_document.uri.clone(),
-                    LedgerBackend::diagnostics(&path, &content),
+                    state.backend.diagnostics(&path, &content),
                     None,
                 )
                 .await;
