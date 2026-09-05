@@ -5,10 +5,15 @@ by Rust and tree-sitter.
 
 ## Features
 
-- code actions
-- completion suggestions for payees, accounts, tags and more
-- document formatting & sorting
-- diagnostics
+- [code actions](#code-actions)
+- [completion](#completions) suggestions for payees, accounts, tags and more
+- [document formatting](#formatting) & sorting
+- [diagnostics](#diagnostics)
+- [find references](#find-references)
+- [hovers](#hovers)
+
+The server also supports some client-side [configuration](#configuration)
+settings.
 
 ### Code Actions
 
@@ -33,8 +38,12 @@ Completions are sourced from:
 
 ### Diagnostics
 
-Diagnostics are currently limited to a single check: does an `include`d file
-exist.
+Supported diagnostics:
+
+- `include` directives with non-existent files
+- accounts, commodities and tags that have not been pre-declared (like ledger
+  flag `--strict` and `--pedantic`)
+- payees that have not been pre-declared (like ledger flag `--check-payees`)
 
 ### Formatting
 
@@ -54,13 +63,32 @@ Upon format, transactions are also automatically sorted by date, also similar to
 [ledger-mode][4]. Comments preceeding transactions are kept with their
 transactions.
 
+### Find References
+
+"Find all references" is supported for accounts and payees. This is currently
+limited to the scope of the current document + any `include`d files.
+
+### Hovers
+
+Hovers are provided for pre-declared accounts, commodities, and payees. The
+hover includes the declared name and – if applicable – note and current alias.
+(Note that ledger only supports notes for accounts and commodities, not for
+payees.)
+
 ## Configuration
 
 The following client-side configuration options are supported:
 
-- `formatting`: enable/disable formatting (default: `true`)
+- `formatting`: enable/disable formatting (default: `true`; allowed: `true` or
+  `false`)
 - `sort_transactions`: when formatting, should transactions also be sorted
-  (default: `true`)
+  (default: `true`; allowed: `true` or `false`)
+- `check_level`: when checking accounts, commodities, tags and payees, should
+  undefined values be reported as warnings, errors, or not at all? This is
+  similar to ledger's `--strict` and `--pedantic` modes. (default: `strict`;
+  allowed: `strict`, `pedantic`, `off`)
+- `check_payees`: should undefined payees also be reported? This is similar to
+  ledger's `--check-payees` mode. (default: `false`; allowed: `true` or `false`)
 
 For example, in Zed, these could be set in your `settings.json`, like so:
 
@@ -72,7 +100,9 @@ For example, in Zed, these could be set in your `settings.json`, like so:
     "ledger-language-server": {
       "initialization_options": {
         "formatting": true,
-        "sort_transactions": false
+        "sort_transactions": false,
+        "check_level": "pedantic",
+        "check_payees": true,
       }
     }
   },
