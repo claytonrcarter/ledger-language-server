@@ -1248,8 +1248,164 @@ impl LedgerBackend {
                 visited,
             )?,
 
+            "commodity" => self.filter_nodes(
+                &mut hovers,
+                buffer_path,
+                // sibling order is important; see account query, above
+                "
+                (commodity_directive
+                    (commodity) @commodity
+                    (commodity_subdirective (alias_subdirective) @alias)*
+                    (commodity_subdirective (note_subdirective) @note)?
+                    (commodity_subdirective (alias_subdirective) @alias)*
+                )
+                ",
+                1,
+                content,
+                &|_node, commodity, _buffer_path, buffer_contents, matches| {
+                    // capture indices:
+                    //  1 => @commodity
+                    //  2 => @alias (NOTE: includes 2nd @alias)
+                    //  3 => @note
+
+                    let capture_contents = |i, prefix| {
+                        matches
+                            .nodes_for_capture_index(i)
+                            .filter_map(|node_node| {
+                                substring(
+                                    buffer_contents.as_bytes(),
+                                    node_node.start_byte(),
+                                    node_node.end_byte(),
+                                )
+                                .ok()
+                                .and_then(|s| {
+                                    s.strip_prefix(prefix).map(str::trim).map(str::to_string)
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    };
+
+                    let get_note = || capture_contents(3, "note ").join(" ").trim().to_string();
+                    let get_aliases = || capture_contents(2, "alias ");
+
+                    log::debug!("commodity: {commodity}");
+
+                    let is_match_and_alias = if commodity == current_node_content {
+                        Some(false)
+                    } else {
+                        let aliases = get_aliases();
+                        log::debug!("aliases: {aliases:?}");
+                        aliases.contains(&current_node_content).then_some(true)
+                    };
+
+                    is_match_and_alias
+                        .map(|is_alias| {
+                            if is_alias {
+                                format!("aliased from `{current_node_content}`")
+                            } else {
+                                String::new()
+                            }
+                        })
+                        .map(|alias_content| {
+                            let note_content = get_note();
+                            log::debug!("note_content: {note_content:?}");
+                            log::debug!("alias_content: {alias_content:?}");
+                            let hover_content = format!(
+                                "`{commodity}`{hr}{note}{br}{alias_content}",
+                                hr = if !note_content.is_empty() || !alias_content.is_empty() {
+                                    "\n***"
+                                } else {
+                                    ""
+                                },
+                                note = if !note_content.is_empty() {
+                                    format!("\n*{note_content}*")
+                                } else {
+                                    String::new()
+                                },
+                                br = match (note_content.is_empty(), alias_content.is_empty()) {
+                                    (true, true) => "",
+                                    (true, false) => "\n",
+                                    (false, true) => "",
+                                    (false, false) => "  \n",
+                                },
+                            );
+                            LedgerHover(Hover {
+                                contents: HoverContents::Scalar(MarkedString::String(
+                                    hover_content,
+                                )),
+                                range: None,
+                            })
+                        })
+                },
+                visited,
+            )?,
+
+            "payee" => self.filter_nodes(
+                &mut hovers,
+                buffer_path,
+                "
+                (payee_directive
+                    (payee) @payee
+                    (payee_subdirective (alias_subdirective) @alias)*
+                )
+                ",
+                1, // 1-based index of @payee
+                content,
+                &|_node, payee, _buffer_path, buffer_contents, matches| {
+                    // capture indices:
+                    //  1 => @payee
+                    //  2 => @alias
+
+                    let capture_contents = |i, prefix| {
+                        matches
+                            .nodes_for_capture_index(i)
+                            .filter_map(|node_node| {
+                                substring(
+                                    buffer_contents.as_bytes(),
+                                    node_node.start_byte(),
+                                    node_node.end_byte(),
+                                )
+                                .ok()
+                                .and_then(|s| {
+                                    s.strip_prefix(prefix).map(str::trim).map(str::to_string)
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    };
+
+                    let get_aliases = || capture_contents(2, "alias ");
+
+                    log::debug!("payee: {payee}");
+
+                    let is_match_and_alias = if payee == current_node_content {
+                        Some(false)
+                    } else {
+                        let aliases = get_aliases();
+                        log::debug!("aliases: {aliases:?}");
+                        aliases.contains(&current_node_content).then_some(true)
+                    };
+
+                    is_match_and_alias
+                        .map(|is_alias| {
+                            if is_alias {
+                                format!("`{payee}`\n***\naliased from `{current_node_content}`")
+                            } else {
+                                format!("`{payee}`")
+                            }
+                        })
+                        .map(|hover_content| {
+                            LedgerHover(Hover {
+                                contents: HoverContents::Scalar(MarkedString::String(
+                                    hover_content,
+                                )),
+                                range: None,
+                            })
+                        })
+                },
+                visited,
+            )?,
+
             // TODO: support commodities
-            // TODO: support payees (but they don't have notes so, what's the point?)
             _ => return Ok(LocationBasedResult::None),
         };
 
@@ -3124,8 +3280,6 @@ mod test {
         }
     }
 
-    // TODO: test_hover_payees -> look up a payee by pattern, etc
-
     #[test]
     fn test_hover_accounts() {
         init_logging();
@@ -3472,19 +3626,274 @@ mod test {
             "###
             );
         }
+    }
+
+    #[test]
+    fn test_hover_commodities() {
+        init_logging();
 
         {
-            // account with multiple aliases and a note
+            // commodity without alias or note
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    commodity $
+
+                    2024/01/02 Payee1
+                        Account1  $1
+                        Other
+                    ",
+                ),
+                &Position {
+                    line: 4,
+                    character: 14,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 4,
+                        character: 14,
+                    },
+                    end: Position {
+                        line: 4,
+                        character: 15,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`$`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // commodity with note but no alias
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    commodity $
+                        note This is USD
+
+                    2024/01/02 Payee1
+                        Account1  $1
+                        Other
+                    ",
+                ),
+                &Position {
+                    line: 5,
+                    character: 14,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 5,
+                        character: 14,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 15,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`$`\n***\n*This is USD*",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // commodity with alias
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    commodity $
+                        alias USD
+
+                    2024/01/02 Payee1
+                        Account1  USD1
+                        Other
+                    ",
+                ),
+                &Position {
+                    line: 5,
+                    character: 14,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 5,
+                        character: 14,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 17,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`$`\n***\naliased from `USD`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // commodity with note before alias
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    commodity $
+                        note US dollars
+                        alias USD
+
+                    2024/01/02 Payee1
+                        Account1  USD1
+                        Other
+                    ",
+                ),
+                &Position {
+                    line: 6,
+                    character: 14,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 6,
+                        character: 14,
+                    },
+                    end: Position {
+                        line: 6,
+                        character: 17,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`$`\n***\n*US dollars*  \naliased from `USD`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // commodity with note after alias
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    commodity $
+                        alias USD
+                        note US dollars
+
+                    2024/01/02 Payee1
+                        Account1  USD1
+                        Other
+                    ",
+                ),
+                &Position {
+                    line: 6,
+                    character: 14,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 6,
+                        character: 14,
+                    },
+                    end: Position {
+                        line: 6,
+                        character: 17,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`$`\n***\n*US dollars*  \naliased from `USD`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // commodity with multiple aliases but no note
             let source = textwrap::dedent(
                 "
-                account Account1
-                    alias Act1
-                    note This is account 1
-                    alias Acct1
+                commodity $
+                    alias USD
+                    alias Dollars
 
                 2024/01/02 Payee1
-                    Act1   $1
-                    Acct1  $1
+                    Account1  USD1
+                    Account1  Dollars 1
                     Other
                 ",
             );
@@ -3492,8 +3901,46 @@ mod test {
             let hovers = get_hovers(
                 &source,
                 &Position {
+                    line: 6,
+                    character: 14,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 6,
+                        character: 14,
+                    },
+                    end: Position {
+                        line: 6,
+                        character: 17,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`$`\n***\naliased from `USD`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+
+            let hovers = get_hovers(
+                &source,
+                &Position {
                     line: 7,
-                    character: 5,
+                    character: 14,
                 },
                 None,
             );
@@ -3504,11 +3951,11 @@ mod test {
                 Range {
                     start: Position {
                         line: 7,
-                        character: 4,
+                        character: 14,
                     },
                     end: Position {
                         line: 7,
-                        character: 8,
+                        character: 21,
                     },
                 },
                 [
@@ -3516,7 +3963,62 @@ mod test {
                         Hover {
                             contents: Scalar(
                                 String(
-                                    "`Account1`\n***\n*This is account 1*",
+                                    "`$`\n***\naliased from `Dollars`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // commodity with multiple aliases and a note
+            let source = textwrap::dedent(
+                "
+                commodity $
+                    alias USD
+                    note This is a note
+                    alias Dollars
+
+                2024/01/02 Payee1
+                    Account1  USD1
+                    Account1  Dollars 1
+                    Other
+                ",
+            );
+
+            let hovers = get_hovers(
+                &source,
+                &Position {
+                    line: 7,
+                    character: 14,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 7,
+                        character: 14,
+                    },
+                    end: Position {
+                        line: 7,
+                        character: 17,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`$`\n***\n*This is a note*  \naliased from `USD`",
                                 ),
                             ),
                             range: None,
@@ -3531,7 +4033,7 @@ mod test {
                 &source,
                 &Position {
                     line: 8,
-                    character: 5,
+                    character: 14,
                 },
                 None,
             );
@@ -3542,11 +4044,11 @@ mod test {
                 Range {
                     start: Position {
                         line: 8,
-                        character: 4,
+                        character: 14,
                     },
                     end: Position {
                         line: 8,
-                        character: 9,
+                        character: 21,
                     },
                 },
                 [
@@ -3554,7 +4056,206 @@ mod test {
                         Hover {
                             contents: Scalar(
                                 String(
-                                    "`Account1`\n***\n*This is account 1*",
+                                    "`$`\n***\n*This is a note*  \naliased from `Dollars`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+    }
+
+    #[test]
+    fn test_hover_payees() {
+        init_logging();
+
+        {
+            // payee without alias
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    payee Payee
+
+                    2024/01/02 Payee
+                        Account  $1
+                        Account
+                    ",
+                ),
+                &Position {
+                    line: 3,
+                    character: 12,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 3,
+                        character: 11,
+                    },
+                    end: Position {
+                        line: 3,
+                        character: 16,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Payee`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // payee with alias
+            let hovers = get_hovers(
+                &textwrap::dedent(
+                    "
+                    payee Payee
+                        alias Payee1
+
+                    2024/01/02 Payee1
+                        Account  $1
+                        Account
+                    ",
+                ),
+                &Position {
+                    line: 4,
+                    character: 12,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 4,
+                        character: 11,
+                    },
+                    end: Position {
+                        line: 4,
+                        character: 17,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Payee`\n***\naliased from `Payee1`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+        }
+
+        {
+            // payee with multiple aliases
+            let source = textwrap::dedent(
+                "
+                payee Payee
+                    alias Payee1
+                    alias Payee2
+
+                2024/01/02 Payee1
+                    Account  $1
+                    Account
+
+                2024/01/02 Payee2
+                    Account  $1
+                    Account
+                ",
+            );
+
+            let hovers = get_hovers(
+                &source,
+                &Position {
+                    line: 5,
+                    character: 12,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 5,
+                        character: 11,
+                    },
+                    end: Position {
+                        line: 5,
+                        character: 17,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Payee`\n***\naliased from `Payee1`",
+                                ),
+                            ),
+                            range: None,
+                        },
+                    ),
+                ],
+            )
+            "###
+            );
+
+            let hovers = get_hovers(
+                &source,
+                &Position {
+                    line: 9,
+                    character: 12,
+                },
+                None,
+            );
+
+            insta::assert_debug_snapshot!(hovers,
+            @r###"
+            (
+                Range {
+                    start: Position {
+                        line: 9,
+                        character: 11,
+                    },
+                    end: Position {
+                        line: 9,
+                        character: 17,
+                    },
+                },
+                [
+                    LedgerHover(
+                        Hover {
+                            contents: Scalar(
+                                String(
+                                    "`Payee`\n***\naliased from `Payee2`",
                                 ),
                             ),
                             range: None,
@@ -4121,7 +4822,7 @@ mod test {
         ) {
             Ok(LocationBasedResult::Some { range, results }) => (range, results),
             Ok(LocationBasedResult::NoNode(s)) => panic!("no node: {s}"),
-            Ok(LocationBasedResult::None) => panic!("no results"),
+            Ok(LocationBasedResult::None) => panic!("no results at position {position:?}"),
             Err(err) => panic!("error: {err}"),
         }
     }
