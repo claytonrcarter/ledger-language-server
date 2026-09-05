@@ -141,66 +141,95 @@ impl LanguageServer for Lsp {
         );
 
         let mut state = self.state.lock().await;
-        if let Some(ref opts) = params.initialization_options {
-            match opts.get("formatting") {
-                Some(Value::Bool(should_format)) => {
-                    state.config.format = *should_format;
-                }
-                Some(_) => {
-                    log!(self, WARNING, "[initialize:config] unrecognized value for lsp setting 'formatting'. Expected one of `true` or `false`.");
-                }
-                None => {}
-            }
+        let opts: HashMap<_, _> = match params.initialization_options {
+            Some(ref opts) => match opts.as_object() {
+                Some(opts) => opts.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                None => HashMap::new(),
+            },
+            None => HashMap::new(),
+        };
+        let incorrect_value = async |key: &str, message: &str| {
+            log!(
+                self,
+                WARNING,
+                "[initialize:config] unrecognized value for lsp setting '{key}'. {message}"
+            );
+        };
+        for (key, value) in opts {
+            match key.as_str() {
+                "formatting" => match value {
+                    Value::Bool(should_format) => {
+                        state.config.format = should_format;
+                    }
+                    _ => {
+                        incorrect_value("formatting", "Expected one of `true` or `false`.").await;
+                    }
+                },
 
-            match opts.get("sort_transactions") {
-                Some(Value::Bool(should_sort)) => {
-                    state.config.format_sort_transactions = *should_sort;
-                }
-                Some(_) => {
-                    log!(self, WARNING, "[initialize:config] unrecognized value for lsp setting 'sort_transactions'. Expected one of `true` or `false`.");
-                }
-                None => {}
-            }
+                "sort_transactions" => match value {
+                    Value::Bool(should_sort) => {
+                        state.config.format_sort_transactions = should_sort;
+                    }
+                    _ => {
+                        incorrect_value("sort_transactions", "Expected one of `true` or `false`.")
+                            .await;
+                    }
+                },
 
-            let warning = "[initialize:config] unrecognized value for lsp setting 'check_level'. Expected one of `off`, `strict` or `pedantic`.";
-            match opts.get("check_level") {
-                Some(Value::String(s)) => {
-                    let level = match s.as_str() {
-                        "strict" => Some(CheckLevel::Strict),
-                        "pedantic" => Some(CheckLevel::Pedantic),
-                        "off" => Some(CheckLevel::Off),
-                        s => {
-                            log!(self, WARNING, "{warning} Got '{s}'");
-                            None
+                "check_level" => {
+                    match value {
+                        Value::String(s) => {
+                            let level = match s.as_str() {
+                                "strict" => Some(CheckLevel::Strict),
+                                "pedantic" => Some(CheckLevel::Pedantic),
+                                "off" => Some(CheckLevel::Off),
+                                s => {
+                                    incorrect_value(
+                                        "check_level",
+                                        &format!("Expected one of `off`, `strict` or `pedantic`. Got '{s}'"),
+                                    )
+                                    .await;
+                                    None
+                                }
+                            };
+                            if let Some(level) = level {
+                                state.config.check_level = level;
+                            }
                         }
-                    };
-                    if let Some(level) = level {
-                        state.config.check_level = level;
+                        // not documented, but easy enough to support in case someone
+                        // assumes that `check_level: false` could work
+                        Value::Bool(enable) => {
+                            state.config.check_level = if enable {
+                                CheckLevel::default()
+                            } else {
+                                CheckLevel::Off
+                            };
+                        }
+                        _ => {
+                            incorrect_value(
+                                "check_level",
+                                "Expected one of `off`, `strict` or `pedantic`.",
+                            )
+                            .await;
+                        }
                     }
                 }
-                // not documented, but easy enough to support in case someone
-                // assumes that `check_level: false` could work
-                Some(Value::Bool(enable)) => {
-                    state.config.check_level = if *enable {
-                        CheckLevel::default()
-                    } else {
-                        CheckLevel::Off
-                    };
-                }
-                Some(_) => {
-                    log!(self, WARNING, "{warning}");
-                }
-                None => {}
-            }
 
-            match opts.get("check_payees") {
-                Some(Value::Bool(should_sort)) => {
-                    state.config.check_payees = *should_sort;
+                "check_payees" => match value {
+                    Value::Bool(should_sort) => {
+                        state.config.check_payees = should_sort;
+                    }
+                    _ => {
+                        incorrect_value("check_payees", "Expected one of `true` or `false`.").await;
+                    }
+                },
+                _ => {
+                    log!(
+                        self,
+                        WARNING,
+                        "[initialize:config] unrecognized config setting '{key}'"
+                    );
                 }
-                Some(_) => {
-                    log!(self, WARNING, "[initialize:config] unrecognized value for lsp setting 'check_payees'. Expected one of `true` or `false`.");
-                }
-                None => {}
             }
         }
         log_debug!(self, "[initialize:config] {:#?}", state.config);
