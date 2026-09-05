@@ -793,10 +793,14 @@ impl LedgerBackend {
             (directive
                	[
                 	(account_directive (account) @account
-                        (account_subdirective (alias_subdirective) @alias)*
+                        (account_subdirective (alias_subdirective) @account_alias)*
                     )
-                    (payee_directive (payee) @payee)
-                    (commodity_directive (commodity) @commodity)
+                    (payee_directive (payee) @payee
+                        (payee_subdirective (alias_subdirective) @payee_alias)*
+                    )
+                    (commodity_directive (commodity) @commodity
+                        (commodity_subdirective (alias_subdirective) @commodity_alias)*
+                    )
                     (tag_directive) @tag
                 ]
             ) @directive
@@ -806,16 +810,18 @@ impl LedgerBackend {
                 &mut defined_values,
                 buffer_path,
                 query,
-                6, // 1-based index of @directive
+                8, // 1-based index of @directive
                 content,
                 &|_node, _node_content, _buffer_path, buffer_contents, matches| {
                     #[allow(clippy::type_complexity)]
-                    let captures: [(fn(String) -> DefinedValue, &str); 5] = [
+                    let captures: [(fn(String) -> DefinedValue, &str); 7] = [
                         // must be in same order as captures, above
                         (DefinedValue::Account, ""),
                         (DefinedValue::Account, "alias "),
                         (DefinedValue::Payee, ""),
+                        (DefinedValue::Payee, "alias "),
                         (DefinedValue::Commodity, ""),
+                        (DefinedValue::Commodity, "alias "),
                         (DefinedValue::Tag, "tag "),
                     ];
 
@@ -1621,7 +1627,6 @@ mod test {
         let source = textwrap::dedent(
             "
             account Account1
-                alias Acct1
 
             2024/01/02 Payee1
                 Account1    $1
@@ -1630,7 +1635,6 @@ mod test {
                 Account2    1
                 (Account2)  1
                 [Account2]  1
-                Acct1
             ",
         );
 
@@ -1649,11 +1653,11 @@ mod test {
             Diagnostic {
                 range: Range {
                     start: Position {
-                        line: 5,
+                        line: 4,
                         character: 16,
                     },
                     end: Position {
-                        line: 5,
+                        line: 4,
                         character: 17,
                     },
                 },
@@ -1673,11 +1677,11 @@ mod test {
             Diagnostic {
                 range: Range {
                     start: Position {
-                        line: 8,
+                        line: 7,
                         character: 4,
                     },
                     end: Position {
-                        line: 8,
+                        line: 7,
                         character: 12,
                     },
                 },
@@ -1697,11 +1701,11 @@ mod test {
             Diagnostic {
                 range: Range {
                     start: Position {
-                        line: 9,
+                        line: 8,
                         character: 4,
                     },
                     end: Position {
-                        line: 9,
+                        line: 8,
                         character: 14,
                     },
                 },
@@ -1721,11 +1725,11 @@ mod test {
             Diagnostic {
                 range: Range {
                     start: Position {
-                        line: 10,
+                        line: 9,
                         character: 4,
                     },
                     end: Position {
-                        line: 10,
+                        line: 9,
                         character: 14,
                     },
                 },
@@ -1745,6 +1749,39 @@ mod test {
         ]
         "#
         );
+    }
+
+    #[test]
+    fn test_diagnostics_undefined_values_with_aliases() {
+        let source = textwrap::dedent(
+            "
+            account Account
+                alias Account1
+
+            commodity USD
+                alias $
+
+            payee Payee
+                alias Payee1
+
+            2024/01/02 Payee1
+                Account1    $1
+                Account
+            ",
+        );
+
+        // Payee1, $ and Account1 are all aliases; should produce no diagnostics
+
+        let diagnostics = get_diagnostics(
+            &source,
+            DiagnosticsParams {
+                check_level: CheckLevel::Strict,
+                check_payees: true,
+            },
+            None,
+        );
+
+        insta::assert_debug_snapshot!(diagnostics, @r"[]");
     }
 
     #[test]
